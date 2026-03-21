@@ -1,0 +1,23 @@
+# 依存パッケージ
+node_modules/
+
+# 環境変数
+.env
+
+# セーブデータ（ユーザーデータ）
+data/
+
+# ログ
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# エディタ
+.vscode/
+.idea/
+
+# スクリプト
+commit.sh

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI TRPG — 電脳叙事詩</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500;700&family=Noto+Sans+JP:wght@300;400&family=Zen+Old+Mincho:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════ LANDING PAGE -->
+<div id="landing-screen" class="screen active">
+  <div class="landing-bg">
+    <canvas id="particle-canvas"></canvas>
+  </div>
+  <div class="landing-content">
+    <div class="landing-logo">
+      <span class="logo-jp">電脳叙事詩</span>
+      <span class="logo-en">AI TRPG</span>
+    </div>
+    <p class="landing-tagline">人工知性が紡ぐ、あなただけの物語</p>
+    <button class="btn-start-journey" id="btn-start-journey">
+      <span>冒険を始める</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M5 12h14M12 5l7 7-7 7"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ SETUP WIZARD -->
+<div id="setup-screen" class="screen">
+  <div class="setup-wrapper">
+    <!-- Progress -->
+    <div class="setup-progress">
+      <div class="progress-track">
+        <div class="progress-fill" id="progress-fill"></div>
+      </div>
+      <div class="progress-steps" id="progress-steps">
+        <span class="step-dot active" data-step="0"></span>
+        <span class="step-dot" data-step="1"></span>
+        <span class="step-dot" data-step="2"></span>
+        <span class="step-dot" data-step="3"></span>
+        <span class="step-dot" data-step="4"></span>
+      </div>
+    </div>
+
+    <!-- Step panels -->
+    <div class="setup-steps" id="setup-steps">
+
+      <!-- Step 0: Genre -->
+      <div class="setup-step active" data-step="0">
+        <h2 class="step-title">物語の舞台</h2>
+        <p class="step-subtitle">どの世界で冒険しますか？</p>
+        <div class="genre-grid">
+          <label class="genre-card" data-value="ファンタジー">
+            <input type="radio" name="genre" value="ファンタジー"/>
+            <span class="genre-icon">⚔️</span>
+            <span class="genre-name">ファンタジー</span>
+            <span class="genre-desc">魔法と剣の世界</span>
+          </label>
+          <label class="genre-card" data-value="ダークファンタジー">
+            <input type="radio" name="genre" value="ダークファンタジー"/>
+            <span class="genre-icon">🌑</span>
+            <span class="genre-name">ダーク</span>
+            <span class="genre-desc">深淵と恐怖の物語</span>
+          </label>
+          <label class="genre-card" data-value="SF">
+            <input type="radio" name="genre" value="SF"/>
+            <span class="genre-icon">🚀</span>
+            <span class="genre-name">SF</span>
+            <span class="genre-desc">宇宙と技術の冒険</span>
+          </label>
+          <label class="genre-card" data-value="ホラー">
+            <input type="radio" name="genre" value="ホラー"/>
+            <span class="genre-icon">👻</span>
+            <span class="genre-name">ホラー</span>
+            <span class="genre-desc">恐怖と謎の探索</span>
+          </label>
+          <label class="genre-card" data-value="現代">
+            <input type="radio" name="genre" value="現代"/>
+            <span class="genre-icon">🏙️</span>
+            <span class="genre-name">現代</span>
+            <span class="genre-desc">現代舞台の冒険</span>
+          </label>
+          <label class="genre-card" data-value="カスタム">
+            <input type="radio" name="genre" value="カスタム"/>
+            <span class="genre-icon">✏️</span>
+            <span class="genre-name">カスタム</span>
+            <span class="genre-desc">独自の世界観</span>
+          </label>
+        </div>
+        <div id="custom-setting-wrap" class="custom-input-wrap hidden">
+          <textarea id="custom-setting" class="setup-textarea" placeholder="世界観・ルール・特別な設定を自由に記述してください…" rows="3"></textarea>
+        </div>
+        <div class="step-nav">
+          <button class="btn-next" id="genre-next">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step 1: Style -->
+      <div class="setup-step" data-step="1">
+        <h2 class="step-title">語り口</h2>
+        <p class="step-subtitle">どのスタイルで物語を進めますか？</p>
+        <div class="style-cards">
+          <label class="style-card" data-value="novel">
+            <input type="radio" name="narrativeStyle" value="novel" checked/>
+            <div class="style-card-inner">
+              <span class="style-icon">📖</span>
+              <span class="style-name">小説スタイル</span>
+              <span class="style-desc">文学的・没入感を重視した詩的な描写。感情豊かな三人称視点で語られる物語</span>
+            </div>
+          </label>
+          <label class="style-card" data-value="trpg">
+            <input type="radio" name="narrativeStyle" value="trpg"/>
+            <div class="style-card-inner">
+              <span class="style-icon">🎲</span>
+              <span class="style-name">TRPGスタイル</span>
+              <span class="style-desc">ルールと判定を明示。状況を明確に提示し、選択肢と結果を論理的に展開</span>
+            </div>
+          </label>
+          <label class="style-card" data-value="balanced">
+            <input type="radio" name="narrativeStyle" value="balanced"/>
+            <div class="style-card-inner">
+              <span class="style-icon">⚖️</span>
+              <span class="style-name">バランス</span>
+              <span class="style-desc">没入感とゲーム性を両立。描写の豊かさと明確さを兼ね備えたスタイル</span>
+            </div>
+          </label>
+        </div>
+        <div class="step-nav">
+          <button class="btn-prev">戻る</button>
+          <button class="btn-next">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Rules -->
+      <div class="setup-step" data-step="2">
+        <h2 class="step-title">ゲームルール</h2>
+        <p class="step-subtitle">判定システムとステータスを選んでください</p>
+
+        <div class="rule-section">
+          <label class="rule-label">ダイスシステム</label>
+          <div class="rule-options">
+            <label class="rule-chip selected"><input type="radio" name="diceSystem" value="none" checked/>なし</label>
+            <label class="rule-chip"><input type="radio" name="diceSystem" value="d20"/>d20</label>
+            <label class="rule-chip"><input type="radio" name="diceSystem" value="coc"/>CoC</label>
+            <label class="rule-chip"><input type="radio" name="diceSystem" value="dnd5e"/>D&D 5e</label>
+          </div>
+        </div>
+
+        <div class="rule-section">
+          <label class="rule-label">ステータス管理</label>
+          <div class="rule-options">
+            <label class="rule-chip selected"><input type="radio" name="statsMode" value="none" checked/>なし</label>
+            <label class="rule-chip"><input type="radio" name="statsMode" value="hp"/>HP</label>
+            <label class="rule-chip"><input type="radio" name="statsMode" value="hpmp"/>HP + MP</label>
+          </div>
+        </div>
+
+        <div class="rule-section">
+          <label class="rule-label">応答の長さ</label>
+          <div class="rule-options">
+            <label class="rule-chip"><input type="radio" name="responseLength" value="short"/>短め</label>
+            <label class="rule-chip selected"><input type="radio" name="responseLength" value="standard" checked/>標準</label>
+            <label class="rule-chip"><input type="radio" name="responseLength" value="long"/>長め</label>
+          </div>
+        </div>
+
+        <div class="rule-section">
+          <label class="rule-chip-toggle">
+            <input type="checkbox" id="actionSuggestions"/>
+            <span class="toggle-label">行動の選択肢を提示する</span>
+          </label>
+        </div>
+
+        <div class="step-nav">
+          <button class="btn-prev">戻る</button>
+          <button class="btn-next">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step 3: Character -->
+      <div class="setup-step" data-step="3">
+        <h2 class="step-title">あなたの物語の主人公</h2>
+        <p class="step-subtitle">キャラクターを作成してください</p>
+        <div class="char-form">
+          <div class="form-group">
+            <label class="form-label">キャラクター名</label>
+            <input type="text" id="char-name" class="form-input" placeholder="例：アリア・シルバーウィング" maxlength="50"/>
+          </div>
+          <div class="form-group">
+            <label class="form-label">キャラクター設定</label>
+            <textarea id="char-desc" class="setup-textarea" rows="4"
+              placeholder="例：若き魔法使いの見習い。魔法学院を中退し、行方不明の師を探している。気が強く好奇心旺盛だが、魔法の才能は本物…"></textarea>
+          </div>
+        </div>
+        <div class="step-nav">
+          <button class="btn-prev">戻る</button>
+          <button class="btn-next">次へ</button>
+        </div>
+      </div>
+
+      <!-- Step 4: Theme -->
+      <div class="setup-step" data-step="4">
+        <h2 class="step-title">冒険のテーマ</h2>
+        <p class="step-subtitle">どんな冒険を望みますか？（任意）</p>
+        <div class="theme-presets">
+          <button class="theme-preset-btn" data-theme="謎の遺跡探索と古代文明の秘密">遺跡探索</button>
+          <button class="theme-preset-btn" data-theme="組織に追われながら真実を暴く逃亡劇">逃亡と陰謀</button>
+          <button class="theme-preset-btn" data-theme="呪われた地で怪物と戦いながら村を救う">討伐と救済</button>
+          <button class="theme-preset-btn" data-theme="政治的陰謀渦巻く王都での権力争い">政治的陰謀</button>
+          <button class="theme-preset-btn" data-theme="宇宙の果てで未知の生命体と遭遇する">未知との遭遇</button>
+          <button class="theme-preset-btn" data-theme="愛する者を救うための困難な旅">救出の旅</button>
+        </div>
+        <textarea id="adventure-theme" class="setup-textarea" rows="3"
+          placeholder="自由に入力することもできます。例：古代魔法の封印が解け始めた世界で、伝説の剣士の末裔として運命に立ち向かう…"></textarea>
+        <div class="step-nav">
+          <button class="btn-prev">戻る</button>
+          <button class="btn-next btn-begin" id="btn-begin">
+            <span>物語を始める</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+    </div><!-- /setup-steps -->
+  </div><!-- /setup-wrapper -->
+</div><!-- /setup-screen -->
+
+<!-- ══════════════════════════════════════════════════════════════ LOADING SCREEN -->
+<div id="loading-screen" class="screen">
+  <div class="loading-content">
+    <div class="loading-orb">
+      <div class="orb-ring"></div>
+      <div class="orb-ring"></div>
+      <div class="orb-ring"></div>
+      <div class="orb-core"></div>
+    </div>
+    <p class="loading-text" id="loading-text">世界を構築中…</p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ GAME SCREEN -->
+<div id="game-screen" class="screen">
+
+  <!-- Top bar -->
+  <header class="game-header">
+    <div class="header-left">
+      <span class="game-title-small">電脳叙事詩</span>
+      <span class="session-info" id="session-info">— 第一章</span>
+    </div>
+    <div class="header-right">
+      <button class="icon-btn" id="btn-status" title="ステータス">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
+          <path d="M9 12h6M12 9v6"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="btn-save" title="セーブ">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+          <polyline points="17 21 17 13 7 13 7 21"/>
+          <polyline points="7 3 7 8 15 8"/>
+        </svg>
+      </button>
+      <button class="icon-btn" id="btn-rollback" title="巻き戻し">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <polyline points="1 4 1 10 7 10"/>
+          <path d="M3.51 15a9 9 0 1 0 .49-3.96"/>
+        </svg>
+      </button>
+      <button class="icon-btn icon-btn-danger" id="btn-end" title="セッション終了">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Story area -->
+  <main class="story-area" id="story-area">
+    <div class="story-scroll" id="story-scroll">
+      <div class="story-inner" id="story-inner">
+        <!-- Story paragraphs injected here -->
+      </div>
+    </div>
+  </main>
+
+  <!-- Input area -->
+  <footer class="input-area">
+    <div class="input-wrapper">
+      <div class="dice-btn-wrap" id="dice-btn-wrap" style="display:none">
+        <button class="dice-btn" id="btn-dice" title="ダイスを振る">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <rect x="2" y="2" width="20" height="20" rx="3"/>
+            <circle cx="8" cy="8" r="1.5" fill="currentColor"/>
+            <circle cx="16" cy="16" r="1.5" fill="currentColor"/>
+            <circle cx="16" cy="8" r="1.5" fill="currentColor"/>
+            <circle cx="8" cy="16" r="1.5" fill="currentColor"/>
+            <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+          </svg>
+          <span class="dice-label" id="dice-label">d20</span>
+        </button>
+      </div>
+      <div class="textarea-wrap">
+        <textarea
+          id="action-input"
+          class="action-textarea"
+          placeholder="行動を入力してください…"
+          rows="2"
+          maxlength="500"
+        ></textarea>
+      </div>
+      <button class="send-btn" id="btn-send" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+  </footer>
+</div><!-- /game-screen -->
+
+<!-- ══════════════════════════════════════════════════════════════ MODALS -->
+
+<!-- Status Modal -->
+<div class="modal-overlay" id="modal-status">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>ステータス</h3>
+      <button class="modal-close" data-close="modal-status">×</button>
+    </div>
+    <div class="modal-body" id="status-content">
+      <!-- Filled by JS -->
+    </div>
+  </div>
+</div>
+
+<!-- Save Modal -->
+<div class="modal-overlay" id="modal-save">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>セーブ &amp; ロード</h3>
+      <button class="modal-close" data-close="modal-save">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="save-actions">
+        <div class="save-name-row">
+          <input type="text" id="save-name-input" class="form-input" placeholder="セーブ名（空白で自動命名）" maxlength="40"/>
+          <button class="btn-primary" id="btn-do-save">保存する</button>
+        </div>
+      </div>
+      <hr class="modal-divider"/>
+      <h4 class="modal-subtitle">セーブデータ一覧</h4>
+      <div id="saves-list" class="saves-list">
+        <p class="saves-empty">セーブデータがありません</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>
