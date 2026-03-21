@@ -831,7 +831,8 @@ function rehydrateStoryFromHistory(showNotification = true) {
     }
   });
 
-  scrollToNewest();
+  // DOMレイアウト確定後にスクロール（layoutが未反映の状態でscrollWidthを参照しないよう非同期化）
+  requestAnimationFrame(() => scrollToNewest());
   if (showNotification) showToast('履歴を復元しました');
 }
 

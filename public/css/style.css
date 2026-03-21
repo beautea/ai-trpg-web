@@ -857,9 +857,8 @@ html, body {
 }
 
 .story-inner {
-  /* Vertical writing mode */
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
+  /* 縦書きはエントリ側に指定し、flexレイアウトは横方向を維持する */
+  writing-mode: horizontal-tb;
   /* Layout */
   display: flex;
   flex-direction: row-reverse;  /* 最新エントリ（DOM先頭）が右端に表示される */
@@ -871,6 +870,9 @@ html, body {
 
 /* Individual story entries */
 .story-entry {
+  /* 縦書きはエントリ単位で指定 */
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
   display: inline-block;
   max-height: calc(100vh - 160px);
   min-width: 1.8em;
@@ -1548,6 +1550,9 @@ html, body {
 }
 
 #game-screen.horizontal-mode .story-entry {
+  /* 横書きモードではエントリも横書きに戻す */
+  writing-mode: horizontal-tb;
+  text-orientation: initial;
   max-height: none;
   max-width: min(720px, 90%);
   width: 100%;
