@@ -13,14 +13,17 @@ const state = {
 };
 
 // ── Reader settings ───────────────────────────────────────────────────────────
-const readerSettings = {
-  fontSizeIdx: parseInt(localStorage.getItem('reader_fontSizeIdx') ?? '2', 10),
-  writingMode:  localStorage.getItem('reader_writingMode')  ?? 'vertical',
-  fontFamily:   localStorage.getItem('reader_fontFamily')   ?? 'serif',
-};
+const FONT_SCALES = [0.78, 0.88, 1.0, 1.14, 1.3];
+const FONT_LABELS = ['極小', '小', '中', '大', '極大'];
 
-const FONT_SCALES  = [0.78, 0.88, 1.0, 1.14, 1.3];
-const FONT_LABELS  = ['極小', '小', '中', '大', '極大'];
+// localStorageから復元。不正値はデフォルトにフォールバック
+const readerSettings = (() => {
+  const rawIdx = parseInt(localStorage.getItem('reader_fontSizeIdx'), 10);
+  const idx = Number.isFinite(rawIdx) && rawIdx >= 0 && rawIdx < FONT_SCALES.length ? rawIdx : 2;
+  const mode = localStorage.getItem('reader_writingMode') === 'horizontal' ? 'horizontal' : 'vertical';
+  const family = localStorage.getItem('reader_fontFamily') === 'sans' ? 'sans' : 'serif';
+  return { fontSizeIdx: idx, writingMode: mode, fontFamily: family };
+})();
 
 function saveReaderSettings() {
   localStorage.setItem('reader_fontSizeIdx', readerSettings.fontSizeIdx);
@@ -29,32 +32,46 @@ function saveReaderSettings() {
 }
 
 function applyReaderSettings() {
+  // CSSカスタムプロパティで文字スケールを反映
   document.documentElement.style.setProperty('--story-font-scale', FONT_SCALES[readerSettings.fontSizeIdx]);
+  // game-screenにクラスで書字方向・フォントを反映
   const gameScreen = $('game-screen');
   gameScreen.classList.toggle('horizontal-mode', readerSettings.writingMode === 'horizontal');
-  gameScreen.classList.toggle('font-sans', readerSettings.fontFamily === 'sans');
-  updateReaderUI();
+  gameScreen.classList.toggle('font-sans',       readerSettings.fontFamily  === 'sans');
+  // UIの表示状態を同期
+  syncReaderUI();
 }
 
-function updateReaderUI() {
+function syncReaderUI() {
   $('font-size-label').textContent = FONT_LABELS[readerSettings.fontSizeIdx];
-  $('btn-writing-vertical').classList.toggle('active', readerSettings.writingMode === 'vertical');
+  $('btn-font-smaller').disabled   = readerSettings.fontSizeIdx === 0;
+  $('btn-font-larger').disabled    = readerSettings.fontSizeIdx === FONT_SCALES.length - 1;
+  $('btn-writing-vertical').classList.toggle('active',   readerSettings.writingMode === 'vertical');
   $('btn-writing-horizontal').classList.toggle('active', readerSettings.writingMode === 'horizontal');
   $('btn-font-serif').classList.toggle('active', readerSettings.fontFamily === 'serif');
-  $('btn-font-sans').classList.toggle('active', readerSettings.fontFamily === 'sans');
-  $('btn-font-smaller').disabled = readerSettings.fontSizeIdx === 0;
-  $('btn-font-larger').disabled  = readerSettings.fontSizeIdx === FONT_SCALES.length - 1;
+  $('btn-font-sans').classList.toggle('active',  readerSettings.fontFamily === 'sans');
+}
+
+// パネルの開閉（btn-readerにも開閉状態を反映）
+// ※ $() は line 156 以降に定義されるため、init() 内から呼ぶこと
+function toggleReaderPanel(forceClose = false) {
+  const panel   = document.getElementById('reader-panel');
+  const btn     = document.getElementById('btn-reader');
+  const isOpen  = panel.classList.contains('open');
+  const willOpen = !forceClose && !isOpen;
+  panel.classList.toggle('open', willOpen);
+  btn.classList.toggle('panel-open', willOpen);
 }
 
 // ── Scroll helper ─────────────────────────────────────────────────────────────
 function scrollToNewest() {
   const scroll = $('story-scroll');
   if (readerSettings.writingMode === 'horizontal') {
-    // 横書き: 最新エントリは上端（prepend → DOM先頭 → column先頭 = 上）
-    scroll.scrollTop = 0;
+    // 横書き: 最新エントリは下端（append → DOM末尾 = 下）
+    scroll.scrollTop = scroll.scrollHeight;
   } else {
-    // 縦書き: 最新エントリは右端（prepend → DOM先頭 → row-reverse = 右）
-    scroll.scrollLeft = scroll.scrollWidth - scroll.clientWidth;
+    // 縦書き: 最新エントリは左端（prepend → DOM先頭 → 縦書きは右→左方向）
+    scroll.scrollLeft = 0;
   }
 }
 
@@ -435,16 +452,19 @@ let currentStreamEntry = null;
 let currentCursor = null;
 
 function addStoryEntry(type) {
+  const inner = $('story-inner');
+  const isHorizontal = readerSettings.writingMode === 'horizontal';
+
   // Add divider between entries
-  if ($('story-inner').children.length > 0) {
+  if (inner.children.length > 0) {
     const div = document.createElement('div');
     div.className = 'story-divider';
-    $('story-inner').prepend(div);
+    if (isHorizontal) inner.append(div); else inner.prepend(div);
   }
 
   const entry = document.createElement('div');
   entry.className = `story-entry ${type === 'gm' ? 'gm-entry' : 'player-entry'}`;
-  $('story-inner').prepend(entry);
+  if (isHorizontal) inner.append(entry); else inner.prepend(entry);
 
   // Scroll to show newest entry
   requestAnimationFrame(() => scrollToNewest());
@@ -474,66 +494,78 @@ async function streamToStory(response, type) {
 
   let fullText = '';
   let choicesFound = false; // 選択肢マーカー検出フラグ
+  let doneReceived = false;  // サーバーから done イベントを受け取ったか
 
-  await api.consumeStream(response, (event) => {
-    if (event.type === 'text') {
-      const prevLen = fullText.length;
-      fullText += event.chunk;
+  try {
+    await api.consumeStream(response, (event) => {
+      if (event.type === 'text') {
+        const prevLen = fullText.length;
+        fullText += event.chunk;
 
-      if (!choicesFound) {
-        const markerIdx = fullText.search(/【行動[^\n】]*選択肢[^\n】]*】|【選択肢[^\n】]*】/);
+        if (!choicesFound) {
+          const markerIdx = fullText.search(/【行動[^\n】]*選択肢[^\n】]*】|【選択肢[^\n】]*】/);
 
-        if (markerIdx === -1) {
-          // マーカーなし：チャンクをそのままDOM追加
-          entry.insertBefore(document.createTextNode(event.chunk), cursor);
-        } else {
-          // マーカー検出：マーカー以前の部分だけをDOMに反映
-          choicesFound = true;
-          if (markerIdx >= prevLen) {
-            // マーカーが今回のチャンク内に出現：チャンクの手前部分だけ追加
-            const visiblePart = event.chunk.slice(0, markerIdx - prevLen);
-            if (visiblePart) {
-              entry.insertBefore(document.createTextNode(visiblePart), cursor);
-            }
+          if (markerIdx === -1) {
+            // マーカーなし：チャンクをそのままDOM追加
+            entry.insertBefore(document.createTextNode(event.chunk), cursor);
           } else {
-            // マーカーが複数チャンクにまたがって出現：既存ノードを整理
-            while (entry.firstChild && entry.firstChild !== cursor) {
-              entry.removeChild(entry.firstChild);
-            }
-            const mainSoFar = fullText.slice(0, markerIdx).trimEnd();
-            if (mainSoFar) {
-              entry.insertBefore(document.createTextNode(mainSoFar), cursor);
+            // マーカー検出：マーカー以前の部分だけをDOMに反映
+            choicesFound = true;
+            if (markerIdx >= prevLen) {
+              // マーカーが今回のチャンク内に出現：チャンクの手前部分だけ追加
+              const visiblePart = event.chunk.slice(0, markerIdx - prevLen);
+              if (visiblePart) {
+                entry.insertBefore(document.createTextNode(visiblePart), cursor);
+              }
+            } else {
+              // マーカーが複数チャンクにまたがって出現：既存ノードを整理
+              while (entry.firstChild && entry.firstChild !== cursor) {
+                entry.removeChild(entry.firstChild);
+              }
+              const mainSoFar = fullText.slice(0, markerIdx).trimEnd();
+              if (mainSoFar) {
+                entry.insertBefore(document.createTextNode(mainSoFar), cursor);
+              }
             }
           }
         }
-      }
-      // choicesFound === true の場合はDOMを更新しない（fullTextには蓄積）
+        // choicesFound === true の場合はDOMを更新しない（fullTextには蓄積）
 
-      scrollToNewest();
-    } else if (event.type === 'status') {
-      $('loading-text').textContent = event.text;
-    } else if (event.type === 'done') {
+        scrollToNewest();
+      } else if (event.type === 'status') {
+        $('loading-text').textContent = event.text;
+      } else if (event.type === 'done') {
+        doneReceived = true;
+        cursor.remove();
+        currentStreamEntry = null;
+        currentCursor = null;
+        // セッション統計を更新
+        if (event.player && state.session) {
+          state.session.player = event.player;
+          state.session.turn = event.turn;
+        }
+        // 生成完了後に選択肢を解析してボタン表示
+        if (type === 'gm') {
+          const parsed = parseChoices(fullText);
+          if (parsed) {
+            entry.textContent = parsed.mainText;
+            showActionChoices(parsed.choices);
+          }
+        }
+      } else if (event.type === 'error') {
+        doneReceived = true; // エラーも終了扱い
+        cursor.remove();
+        entry.textContent = `⚠️ ${event.message}`;
+      }
+    });
+  } finally {
+    // done/error を受け取らずにストリームが切れた場合の後始末
+    if (!doneReceived) {
       cursor.remove();
       currentStreamEntry = null;
       currentCursor = null;
-      // セッション統計を更新
-      if (event.player && state.session) {
-        state.session.player = event.player;
-        state.session.turn = event.turn;
-      }
-      // 生成完了後に選択肢を解析してボタン表示
-      if (type === 'gm') {
-        const parsed = parseChoices(fullText);
-        if (parsed) {
-          entry.textContent = parsed.mainText;
-          showActionChoices(parsed.choices);
-        }
-      }
-    } else if (event.type === 'error') {
-      cursor.remove();
-      entry.textContent = `⚠️ ${event.message}`;
     }
-  });
+  }
 
   return fullText;
 }
@@ -641,18 +673,21 @@ $('btn-rollback').addEventListener('click', async () => {
     if (res.ok) {
       // Remove last two entries (player + gm) and their dividers
       const inner = $('story-inner');
-      // Entries are prepended, so first children are newest
+      const isHorizontal = readerSettings.writingMode === 'horizontal';
+      // 縦書き: 最新エントリはfirstChild、横書き: 最新エントリはlastChild
+      const getNewest = () => isHorizontal ? inner.lastChild : inner.firstChild;
       let removed = 0;
-      while (removed < 2 && inner.firstChild) {
-        const child = inner.firstChild;
+      while (removed < 2 && getNewest()) {
+        const child = getNewest();
         inner.removeChild(child);
         if (child.classList && (child.classList.contains('story-entry') || child.classList.contains('story-divider'))) {
           if (child.classList.contains('story-entry')) removed++;
         }
       }
-      // Also remove divider if it's first now
-      if (inner.firstChild?.classList?.contains('story-divider')) {
-        inner.removeChild(inner.firstChild);
+      // Also remove dangling divider at the newest end
+      const edge = getNewest();
+      if (edge?.classList?.contains('story-divider')) {
+        inner.removeChild(edge);
       }
       showToast('ターンを巻き戻しました');
     } else {
@@ -799,22 +834,30 @@ function rehydrateStoryFromHistory(showNotification = true) {
 
   if (!state.session?.history) return;
 
-  // 履歴は時系列順なので逆順でappend（最新が先頭＝左端/上端）
-  const reversed = [...state.session.history].reverse();
+  const isHorizontal = readerSettings.writingMode === 'horizontal';
+  // 縦書き: 逆順でappend（最新が先頭＝左端）、横書き: 時系列順でappend（最新が末尾＝下端）
+  const ordered = isHorizontal
+    ? [...state.session.history]
+    : [...state.session.history].reverse();
 
-  reversed.forEach((entry, i, arr) => {
+  ordered.forEach((entry, i, arr) => {
     const type = entry.role === 'assistant' ? 'gm' : 'player';
     const el = document.createElement('div');
     el.className = `story-entry ${type === 'gm' ? 'gm-entry' : 'player-entry'}`;
     el.style.animationDelay = `${i * 30}ms`;
 
-    // 最初のGMエントリ（最新）の場合は選択肢を除去して表示
-    if (type === 'gm' && i === 0) {
+    // 最新エントリのインデックス（縦書き: 0、横書き: arr.length-1）
+    const newestIdx = isHorizontal ? arr.length - 1 : 0;
+
+    if (type === 'gm') {
       const parsed = parseChoices(entry.content);
       if (parsed) {
+        // 選択肢テキストは常に除去して本文のみ表示
         el.textContent = parsed.mainText;
-        // DOMに追加後にボタンを表示（非同期で最後に実行）
-        requestAnimationFrame(() => showActionChoices(parsed.choices));
+        // 最新GMエントリかつ直後にユーザー応答がない場合のみボタン表示
+        if (i === newestIdx) {
+          requestAnimationFrame(() => showActionChoices(parsed.choices));
+        }
       } else {
         el.textContent = entry.content;
       }
@@ -877,66 +920,77 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
-// ── Reader settings event handlers ────────────────────────────────────────────
+// ── Reader settings: イベント登録（init()から呼ぶ） ──────────────────────────
+function initReaderPanel() {
+  // 表示設定パネルの開閉
+  $('btn-reader').addEventListener('click', () => toggleReaderPanel());
 
-$('btn-reader').addEventListener('click', () => {
-  $('reader-panel').classList.toggle('open');
-});
+  // 文字サイズ
+  $('btn-font-smaller').addEventListener('click', () => {
+    if (readerSettings.fontSizeIdx > 0) {
+      readerSettings.fontSizeIdx--;
+      applyReaderSettings();
+      saveReaderSettings();
+    }
+  });
+  $('btn-font-larger').addEventListener('click', () => {
+    if (readerSettings.fontSizeIdx < FONT_SCALES.length - 1) {
+      readerSettings.fontSizeIdx++;
+      applyReaderSettings();
+      saveReaderSettings();
+    }
+  });
 
-$('btn-font-smaller').addEventListener('click', () => {
-  if (readerSettings.fontSizeIdx > 0) {
-    readerSettings.fontSizeIdx--;
-    applyReaderSettings();
-    saveReaderSettings();
-  }
-});
+  // 書字方向
+  $('btn-writing-vertical').addEventListener('click', () => {
+    if (readerSettings.writingMode !== 'vertical') {
+      readerSettings.writingMode = 'vertical';
+      applyReaderSettings();
+      saveReaderSettings();
+      scrollToNewest();
+    }
+  });
+  $('btn-writing-horizontal').addEventListener('click', () => {
+    if (readerSettings.writingMode !== 'horizontal') {
+      readerSettings.writingMode = 'horizontal';
+      applyReaderSettings();
+      saveReaderSettings();
+      scrollToNewest();
+    }
+  });
 
-$('btn-font-larger').addEventListener('click', () => {
-  if (readerSettings.fontSizeIdx < FONT_SCALES.length - 1) {
-    readerSettings.fontSizeIdx++;
-    applyReaderSettings();
-    saveReaderSettings();
-  }
-});
+  // フォント
+  $('btn-font-serif').addEventListener('click', () => {
+    if (readerSettings.fontFamily !== 'serif') {
+      readerSettings.fontFamily = 'serif';
+      applyReaderSettings();
+      saveReaderSettings();
+    }
+  });
+  $('btn-font-sans').addEventListener('click', () => {
+    if (readerSettings.fontFamily !== 'sans') {
+      readerSettings.fontFamily = 'sans';
+      applyReaderSettings();
+      saveReaderSettings();
+    }
+  });
 
-$('btn-writing-vertical').addEventListener('click', () => {
-  if (readerSettings.writingMode !== 'vertical') {
-    readerSettings.writingMode = 'vertical';
-    applyReaderSettings();
-    saveReaderSettings();
-    scrollToNewest();
-  }
-});
-
-$('btn-writing-horizontal').addEventListener('click', () => {
-  if (readerSettings.writingMode !== 'horizontal') {
-    readerSettings.writingMode = 'horizontal';
-    applyReaderSettings();
-    saveReaderSettings();
-    scrollToNewest();
-  }
-});
-
-$('btn-font-serif').addEventListener('click', () => {
-  if (readerSettings.fontFamily !== 'serif') {
-    readerSettings.fontFamily = 'serif';
-    applyReaderSettings();
-    saveReaderSettings();
-  }
-});
-
-$('btn-font-sans').addEventListener('click', () => {
-  if (readerSettings.fontFamily !== 'sans') {
-    readerSettings.fontFamily = 'sans';
-    applyReaderSettings();
-    saveReaderSettings();
-  }
-});
+  // パネル外クリックで閉じる
+  document.addEventListener('click', (e) => {
+    if (!$('reader-panel').classList.contains('open')) return;
+    if ($('btn-reader').contains(e.target)) return;
+    if ($('reader-panel').contains(e.target)) return;
+    toggleReaderPanel(true);
+  });
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   initParticles();
+  // 表示設定を読み込んで反映
   applyReaderSettings();
+  // 表示設定パネルのイベントを登録
+  initReaderPanel();
 
   $('btn-start-journey').addEventListener('click', () => showScreen('setup'));
 
@@ -947,16 +1001,7 @@ async function init() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       document.querySelectorAll('.modal-overlay.open').forEach((m) => m.classList.remove('open'));
-      $('reader-panel').classList.remove('open');
-    }
-  });
-
-  // リーダーパネル外クリックで閉じる（SVG子要素も考慮）
-  document.addEventListener('click', (e) => {
-    const panel = $('reader-panel');
-    const btn = $('btn-reader');
-    if (panel.classList.contains('open') && !panel.contains(e.target) && !btn.contains(e.target)) {
-      panel.classList.remove('open');
+      toggleReaderPanel(true);
     }
   });
 

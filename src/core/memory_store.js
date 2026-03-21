@@ -193,6 +193,49 @@ export async function queryMemories(sessionId, queryText, nResults = 5) {
 }
 
 /**
+ * コレクション内の全ドキュメントを取得（セマンティック検索なし）
+ * @returns {Array<{document:string, metadata:object}>}
+ */
+export async function listAllMemories(sessionId) {
+  if (!_backend) return [];
+  try {
+    if (_backend === 'chroma') {
+      const coll = await getOrCreateChromaCollection(sessionId);
+      const res = await coll.get({});
+      return (res.documents || []).map((doc, i) => ({
+        document: doc,
+        metadata: res.metadatas?.[i] ?? {},
+      }));
+    } else {
+      const coll = _memStore._coll(sessionId);
+      return coll.map((e) => ({ document: e.text, metadata: e.metadata }));
+    }
+  } catch (err) {
+    console.error('listAllMemories error:', err.message);
+    return [];
+  }
+}
+
+// ── システムルール（全セッション共通・永続） ────────────────────────────────────
+
+const SYSTEM_SESSION_ID = 'systemrules'; // ChromaDBコレクション名（ハイフン不使用）
+
+/**
+ * システムルールを追加（upsert: 同IDは上書き）
+ */
+export async function addSystemRule(ruleId, text, metadata = {}) {
+  return addMemory(SYSTEM_SESSION_ID, ruleId, text, { ...metadata, type: 'system_rule' });
+}
+
+/**
+ * 全システムルールを取得
+ * @returns {Array<{document:string, metadata:object}>}
+ */
+export async function getAllSystemRules() {
+  return listAllMemories(SYSTEM_SESSION_ID);
+}
+
+/**
  * セッションのメモリを全削除
  */
 export async function deleteSessionMemories(sessionId) {

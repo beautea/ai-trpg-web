@@ -4,8 +4,42 @@
  * 次のターンで関連メモリを検索してシステムプロンプトに注入する
  */
 
-import { addMemory, queryMemories } from './memory_store.js';
+import { addMemory, queryMemories, addSystemRule, getAllSystemRules } from './memory_store.js';
 import { chat } from './llm_client.js';
+import { SYSTEM_RULES } from '../system_rules.js';
+
+/**
+ * サーバー起動時にsystem_rules.jsの内容をChromaDBへ永続化（idempotent）
+ */
+export async function initFormattingRules() {
+  for (const rule of SYSTEM_RULES) {
+    await addSystemRule(rule.id, rule.text, { category: rule.category });
+  }
+  console.log(`✓ システムルール ${SYSTEM_RULES.length}件をChromaDBに永続化しました`);
+}
+
+/**
+ * 全システムルールをChromaDBから取得
+ * @returns {Promise<Array<{document:string, metadata:object}>>}
+ */
+export async function retrieveSystemRules() {
+  return getAllSystemRules();
+}
+
+/**
+ * システムルールをシステムプロンプト用テキストにフォーマット
+ * @param {Array<{document:string}>} rules
+ * @returns {string}
+ */
+export function formatSystemRulesForPrompt(rules) {
+  if (!rules || rules.length === 0) return '';
+  const lines = rules
+    .filter((r) => r.document?.trim())
+    .map((r) => `・${r.document}`)
+    .join('\n');
+  if (!lines) return '';
+  return `\n\n【永続ルール】（必ず守ること）\n${lines}`;
+}
 
 /**
  * ターン終了後にLLMで重要事実を抽出してメモリに格納（非同期・fire-and-forget）

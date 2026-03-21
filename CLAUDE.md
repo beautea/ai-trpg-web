@@ -20,6 +20,7 @@
 ```
 server.js（Expressアプリ）
   ├── src/routes/api.js         # APIエンドポイント定義
+  ├── src/system_rules.js       # システムルール定義データ
   └── src/core/
         ├── session_store.js   # セッション状態のSSoT（Map）
         ├── llm_client.js      # Anthropic API通信
@@ -28,7 +29,7 @@ server.js（Expressアプリ）
         ├── save_manager.js    # セーブ・ロード（ファイルI/O）
         ├── auto_save.js       # 自動セーブ・起動時セッション復元
         ├── memory_store.js    # ChromaDBメモリストア管理
-        └── rag_system.js      # RAG（検索拡張生成）システム
+        └── rag_system.js      # RAG（検索拡張生成）・システムルール管理
 ```
 
 フロントエンドは `public/` 配下のVanilla JS（SPA）。
@@ -39,6 +40,7 @@ server.js（Expressアプリ）
 |---------|------|------------|
 | `server.js` | Expressセットアップ・静的ファイル配信・ChromaDB起動 | ゲームロジック |
 | `src/routes/api.js` | HTTPエンドポイント定義・SSEストリーム | ゲームロジック |
+| `src/system_rules.js` | システムルール定義データ | HTTP・LLM |
 | `src/core/gm_system.js` | AIGMオーケストレーター | HTTP・フロントエンド |
 | `src/core/prompt_builder.js` | システムプロンプト構築 | HTTP・LLM通信 |
 | `src/core/llm_client.js` | LLM API通信 | ゲームロジック |
@@ -46,7 +48,7 @@ server.js（Expressアプリ）
 | `src/core/save_manager.js` | セーブ・ロード・ファイルI/O | HTTP |
 | `src/core/auto_save.js` | 自動セーブ・起動時全セッション復元 | HTTP・LLM |
 | `src/core/memory_store.js` | ChromaDBクライアント初期化・メモリCRUD | ゲームロジック |
-| `src/core/rag_system.js` | メモリ抽出・検索・プロンプト整形 | HTTP |
+| `src/core/rag_system.js` | メモリ抽出・検索・プロンプト整形・システムルール管理 | HTTP |
 | `public/js/app.js` | UIステート管理・イベントハンドラ | サーバーロジック |
 | `public/js/api.js` | fetchラッパー・SSEパーサー | UIロジック |
 
@@ -159,11 +161,13 @@ GMの応答テキストから `【HP】現在: X / 最大: Y` 形式を正規表
 ### RAGシステム
 `processActionStream()` はプレイヤー行動をもとに `rag_system.retrieveRelevantMemories()` で関連メモリを検索し、システムプロンプトに注入する。GM応答後は `extractAndStoreMemoryAsync()` で非同期にメモリを抽出・格納する（レスポンスをブロックしない）。
 
+加えて、`rag_system.retrieveSystemRules()` で `src/system_rules.js` に定義された永続ルールを取得し、`formatSystemRulesForPrompt()` でプロンプト文字列に整形して各アクション・イントロ生成時に注入する。`server.js` 起動時に `initFormattingRules()` を呼び出して初期化する。
+
 ### 自動セーブ
 `processActionStream()` と `generateIntroStream()` の完了後、`auto_save.autoSave()` を非同期で呼び出す。起動時は `loadAllAutoSaves()` で `data/saves/` 配下の自動セーブを全セッション分メモリに復元する。
 
 ### ChromaDB
-`server.js` 起動時に `chroma` CLIが検出できればローカルプロセスとしてChromaDBサーバーを起動する。未検出の場合はインメモリフォールバックで動作する。`memory_store.initMemoryStore(url)` で接続初期化する。
+`server.js` 起動時に `chroma` CLIが検出できればローカルプロセスとしてChromaDBサーバーを起動する。未検出の場合はインメモリフォールバックで動作する。`memory_store.initMemoryStore(url)` で接続初期化する。その後 `rag_system.initFormattingRules()` でシステムルールを読み込む。
 
 ### セーブ形式
 `data/saves/{sessionId}/{saveName}.json` + `{saveName}_summary.md` の2ファイル形式。JSONにはセッション全状態を保存し、MDは人間向けサマリー。
@@ -188,6 +192,25 @@ GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_b
 
 ### 行動選択肢
 GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoices()` で本文と選択肢を分離し、選択肢をボタンとして表示する。ストリーミング中は選択肢セクションをDOMに出力せず、生成完了後に反映する。
+
+### 静的ファイルのキャッシュバスティング
+`server.js` 起動時に `BUILD_TS = Date.now()` を生成する。SPA フォールバックで `index.html` を動的に読み込み、`/css/` および `/js/` の URL に `?v=BUILD_TS` を注入して返す。`express.static` は `index: false` で `index.html` の自動配信を無効化し、必ず SPA フォールバック経由で提供する。Cloudflare 等 CDN のエッジキャッシュバイパスのため、全静的ファイルに `Cache-Control: no-cache` を設定する。
+
+### リーダー設定パネル（フロントエンド）
+`readerSettings` は IIFE で `localStorage` から読み込み、不正値はデフォルトにフォールバックする。`initReaderPanel()` が全ボタンのイベントリスナーを登録し `init()` から呼ぶ。状態変更は `syncReaderUI()` で全トグルボタンの `.active` クラスと CSS 変数を一括同期する。`toggleReaderPanel(forceClose)` でパネルの開閉を制御する。
+
+### ストーリー表示の書字方向とスクロール
+`writing-mode: vertical-rl` は `.story-entry` 要素に設定し、フレックスコンテナ `.story-inner` には設定しない（コンテナに設定するとフレックスの主軸が縦方向に変わり上方向スクロールになるため）。
+- **縦書き**: `overflow-x: auto`、`.story-inner` は `flex-direction: row`（最新エントリが左端・古いエントリが右端）、エントリは `prepend`、`scrollToNewest()` は `scrollLeft = 0`（左端の最新エントリを表示）
+- **横書き**: `overflow-y: auto`、エントリは `append`（最新エントリが下端）、`scrollToNewest()` は `scrollTop = scrollHeight`（下端の最新エントリを表示）
+
+書字方向によってDOM操作の方向が変わる箇所：
+- `addStoryEntry()`: 縦書きは `prepend`、横書きは `append`
+- `rehydrateStoryFromHistory()`: 縦書きは逆順でappend（最新が先頭）、横書きは時系列順でappend（最新が末尾）。行動選択肢の表示判定インデックスも書字方向に応じて変わる（縦書き: `i === 0`、横書き: `i === arr.length - 1`）
+- ロールバック: 縦書きは `firstChild`（先頭=最新）を削除、横書きは `lastChild`（末尾=最新）を削除
+
+### ストリーミングカーソルのクリーンアップ
+`streamToStory()` は `doneReceived` フラグと `try/finally` を使い、サーバーから `done`/`error` イベントが来ない異常終了時もカーソル要素を確実に除去する。
 
 ---
 

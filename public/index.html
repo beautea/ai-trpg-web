@@ -291,24 +291,26 @@
   </header>
 
   <!-- Reader settings panel -->
-  <div id="reader-panel" class="reader-panel">
-    <div class="reader-group">
-      <span class="reader-label">文字</span>
-      <button class="reader-btn" id="btn-font-smaller" title="文字を小さく">A−</button>
-      <span class="reader-value" id="font-size-label">中</span>
-      <button class="reader-btn" id="btn-font-larger" title="文字を大きく">A＋</button>
-    </div>
-    <div class="reader-sep"></div>
-    <div class="reader-group">
-      <span class="reader-label">書字</span>
-      <button class="reader-btn reader-toggle active" id="btn-writing-vertical">縦</button>
-      <button class="reader-btn reader-toggle" id="btn-writing-horizontal">横</button>
-    </div>
-    <div class="reader-sep"></div>
-    <div class="reader-group">
-      <span class="reader-label">字体</span>
-      <button class="reader-btn reader-toggle active" id="btn-font-serif">明朝</button>
-      <button class="reader-btn reader-toggle" id="btn-font-sans">ゴシック</button>
+  <div id="reader-panel" class="reader-panel" role="toolbar" aria-label="表示設定">
+    <div class="reader-panel-inner">
+      <div class="reader-group">
+        <span class="reader-label">文字サイズ</span>
+        <button class="reader-btn" id="btn-font-smaller" title="文字を小さく">A−</button>
+        <span class="reader-value" id="font-size-label">中</span>
+        <button class="reader-btn" id="btn-font-larger" title="文字を大きく">A＋</button>
+      </div>
+      <div class="reader-sep"></div>
+      <div class="reader-group">
+        <span class="reader-label">書字方向</span>
+        <button class="reader-btn reader-toggle" id="btn-writing-vertical">縦書き</button>
+        <button class="reader-btn reader-toggle" id="btn-writing-horizontal">横書き</button>
+      </div>
+      <div class="reader-sep"></div>
+      <div class="reader-group">
+        <span class="reader-label">フォント</span>
+        <button class="reader-btn reader-toggle" id="btn-font-serif">明朝体</button>
+        <button class="reader-btn reader-toggle" id="btn-font-sans">ゴシック体</button>
+      </div>
     </div>
   </div>
 

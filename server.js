@@ -1,12 +1,17 @@
 import 'dotenv/config';
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { spawn, execSync } from 'child_process';
 import { config } from './src/config.js';
 import apiRouter from './src/routes/api.js';
 import { initMemoryStore } from './src/core/memory_store.js';
+import { initFormattingRules } from './src/core/rag_system.js';
 import { loadAllAutoSaves } from './src/core/auto_save.js';
+
+// 起動時タイムスタンプ（キャッシュバスティング用）
+const BUILD_TS = Date.now();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -49,26 +54,28 @@ const app = express();
 
 app.use(express.json());
 
-// 静的ファイル配信（CSS/JSは1日キャッシュ、HTMLはno-cache）
+// 静的ファイル配信（index.htmlはSPAフォールバックで注入するためindex:false）
 app.use(
   express.static(path.join(__dirname, 'public'), {
-    maxAge: '1d',
+    index: false,   // index.html を自動配信しない（バージョン注入のためSPAルートに任せる）
     etag: true,
     lastModified: true,
-    setHeaders(res, filePath) {
-      if (filePath.endsWith('.html')) {
-        res.setHeader('Cache-Control', 'no-cache');
-      }
+    setHeaders(res, _filePath) {
+      res.setHeader('Cache-Control', 'no-cache');
     },
   }),
 );
 
 app.use('/api', apiRouter);
 
-// SPA fallback（常に最新のHTMLを返す）
+// SPA fallback（HTMLにバージョンクエリを注入して返す）
+// ?v=BUILD_TS を付けることで Cloudflare 等の CDN キャッシュをバイパスする
+const INDEX_PATH = path.join(__dirname, 'public', 'index.html');
 app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const html = fs.readFileSync(INDEX_PATH, 'utf8')
+    .replace(/(href|src)="(\/(?:css|js)\/[^"]+)"/g, `$1="$2?v=${BUILD_TS}"`);
+  res.send(html);
 });
 
 // ── 起動シーケンス ─────────────────────────────────────────────────────────────
@@ -77,6 +84,7 @@ async function start() {
   // ChromaDB起動 → メモリストア初期化（失敗時はインメモリフォールバック）
   await startChromaServer();
   await initMemoryStore(config.chroma.url);
+  await initFormattingRules();
 
   // 前回セッションをファイルから復元
   await loadAllAutoSaves();

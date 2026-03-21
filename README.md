@@ -70,6 +70,7 @@ ai-trpg-web/
 ├── server.js              # Expressアプリ エントリーポイント
 ├── src/
 │   ├── config.js          # LLM・サーバー・ChromaDB設定
+│   ├── system_rules.js    # 永続システムルール定義データ
 │   ├── routes/
 │   │   └── api.js         # APIエンドポイント
 │   └── core/

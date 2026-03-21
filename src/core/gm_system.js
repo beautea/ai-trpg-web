@@ -14,6 +14,8 @@ import {
   extractAndStoreMemoryAsync,
   retrieveRelevantMemories,
   formatMemoriesForPrompt,
+  retrieveSystemRules,
+  formatSystemRulesForPrompt,
 } from './rag_system.js';
 import { autoSave } from './auto_save.js';
 
@@ -24,9 +26,13 @@ export async function generateIntroStream(sessionId, onChunk) {
   const session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
-  const prompt = buildIntroPrompt(session);
+  const [systemRules, prompt] = await Promise.all([
+    retrieveSystemRules(),
+    Promise.resolve(buildIntroPrompt(session)),
+  ]);
+  const introSystem = `あなたは優れた小説家兼ゲームマスターです。${formatSystemRulesForPrompt(systemRules)}`;
   const fullText = await chatStream(
-    'あなたは優れた小説家兼ゲームマスターです。',
+    introSystem,
     [{ role: 'user', content: prompt }],
     onChunk,
   );
@@ -69,9 +75,12 @@ export async function processActionStream(sessionId, playerInput, onChunk) {
   // プレイヤー行動を履歴に追加
   addHistory(sessionId, 'user', playerInput);
 
-  // RAG: 現在の行動に関連するメモリを検索
-  const memories = await retrieveRelevantMemories(sessionId, playerInput);
-  const memoriesText = formatMemoriesForPrompt(memories);
+  // RAG: 永続システムルール + 行動関連メモリを検索
+  const [systemRules, memories] = await Promise.all([
+    retrieveSystemRules(),
+    retrieveRelevantMemories(sessionId, playerInput),
+  ]);
+  const memoriesText = formatSystemRulesForPrompt(systemRules) + formatMemoriesForPrompt(memories);
 
   const systemPrompt = buildSystemPrompt(session, memoriesText);
   const messages = session.history.map((h) => ({ role: h.role, content: h.content }));
@@ -105,8 +114,11 @@ export async function processAction(sessionId, playerInput) {
 
   addHistory(sessionId, 'user', playerInput);
 
-  const memories = await retrieveRelevantMemories(sessionId, playerInput);
-  const memoriesText = formatMemoriesForPrompt(memories);
+  const [systemRules, memories] = await Promise.all([
+    retrieveSystemRules(),
+    retrieveRelevantMemories(sessionId, playerInput),
+  ]);
+  const memoriesText = formatSystemRulesForPrompt(systemRules) + formatMemoriesForPrompt(memories);
   const systemPrompt = buildSystemPrompt(session, memoriesText);
   const messages = session.history.map((h) => ({ role: h.role, content: h.content }));
 

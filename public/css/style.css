@@ -857,12 +857,9 @@ html, body {
 }
 
 .story-inner {
-  /* Vertical writing mode */
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  /* Layout */
+  /* writing-modeはstory-entryに設定（フレックスコンテナに設定すると軸方向が変わるため）*/
   display: flex;
-  flex-direction: row-reverse;  /* 最新エントリ（DOM先頭）が右端に表示される */
+  flex-direction: row;  /* 縦書き右→左: 最新エントリ（DOM先頭）が左端、古いエントリが右端 */
   min-height: 100%;
   padding: 32px 80px 32px 80px;
   gap: 0;
@@ -871,16 +868,19 @@ html, body {
 
 /* Individual story entries */
 .story-entry {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
   display: inline-block;
   max-height: calc(100vh - 160px);
   min-width: 1.8em;
   padding: 0 12px;
   border-right: 1px solid var(--border-dim);
+  white-space: pre-wrap;
   opacity: 0;
   animation: entryFadeIn 0.6s ease forwards;
 }
 
-.story-entry:first-child {
+.story-entry:last-child {
   border-right: none;
 }
 
@@ -1409,27 +1409,40 @@ html, body {
 /* ═══════════════════════════════════════════════════════
    READER SETTINGS PANEL
    ═══════════════════════════════════════════════════════ */
+
+/* btn-readerが開いているとき */
+#btn-reader.panel-open {
+  color: var(--accent-purple);
+  border-color: rgba(140,100,255,0.4);
+  background: rgba(140,100,255,0.08);
+}
+
 .reader-panel {
   flex-shrink: 0;
   max-height: 0;
   overflow: hidden;
   background: rgba(8,8,16,0.98);
   backdrop-filter: blur(20px);
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 0 20px;
-  transition: max-height 300ms cubic-bezier(0.4,0,0.2,1),
-              padding 300ms cubic-bezier(0.4,0,0.2,1);
   border-bottom: 1px solid transparent;
+  transition:
+    max-height 280ms cubic-bezier(0.4,0,0.2,1),
+    border-color 280ms ease;
   z-index: 9;
 }
 
 .reader-panel.open {
-  max-height: 80px;
-  padding: 10px 20px;
+  /* 2行折り返しでも収まる余裕のある高さ */
+  max-height: 160px;
   border-bottom-color: var(--border-dim);
+}
+
+/* 実際のレイアウトはinner側に委譲（overflow:hiddenの影響を受けない） */
+.reader-panel-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 4px;
+  padding: 10px 20px;
 }
 
 .reader-group {
@@ -1440,48 +1453,57 @@ html, body {
 
 .reader-sep {
   width: 1px;
-  height: 20px;
-  background: var(--border-dim);
-  margin: 0 8px;
+  height: 22px;
+  background: rgba(255,255,255,0.08);
+  margin: 0 10px;
+  flex-shrink: 0;
 }
 
 .reader-label {
   font-size: 0.7rem;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
   white-space: nowrap;
+  user-select: none;
 }
 
 .reader-value {
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   color: var(--text-secondary);
-  min-width: 22px;
+  min-width: 28px;
   text-align: center;
+  user-select: none;
 }
 
 .reader-btn {
-  padding: 4px 10px;
+  padding: 5px 11px;
   background: transparent;
-  border: 1px solid var(--border-dim);
+  border: 1px solid rgba(255,255,255,0.1);
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   font-size: 0.78rem;
-  cursor: pointer;
-  transition: var(--transition-fast);
-  white-space: nowrap;
   font-family: var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
+  line-height: 1;
 }
 
-.reader-btn:hover {
-  border-color: rgba(140,100,255,0.4);
+.reader-btn:hover:not(:disabled) {
+  border-color: rgba(140,100,255,0.45);
   color: var(--text-primary);
-  background: rgba(140,100,255,0.07);
+  background: rgba(140,100,255,0.08);
+}
+
+.reader-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .reader-btn.reader-toggle.active {
   border-color: var(--accent-purple);
   color: var(--accent-purple);
-  background: rgba(140,100,255,0.12);
+  background: rgba(140,100,255,0.14);
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1548,6 +1570,8 @@ html, body {
 }
 
 #game-screen.horizontal-mode .story-entry {
+  writing-mode: horizontal-tb;
+  text-orientation: initial;
   max-height: none;
   max-width: min(720px, 90%);
   width: 100%;
