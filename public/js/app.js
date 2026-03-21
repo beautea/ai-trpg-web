@@ -12,6 +12,114 @@ const state = {
   totalSteps: 5,
 };
 
+// ── Reader settings ───────────────────────────────────────────────────────────
+const readerSettings = {
+  fontSizeIdx: parseInt(localStorage.getItem('reader_fontSizeIdx') ?? '2', 10),
+  writingMode:  localStorage.getItem('reader_writingMode')  ?? 'vertical',
+  fontFamily:   localStorage.getItem('reader_fontFamily')   ?? 'serif',
+};
+
+const FONT_SCALES  = [0.78, 0.88, 1.0, 1.14, 1.3];
+const FONT_LABELS  = ['極小', '小', '中', '大', '極大'];
+
+function saveReaderSettings() {
+  localStorage.setItem('reader_fontSizeIdx', readerSettings.fontSizeIdx);
+  localStorage.setItem('reader_writingMode',  readerSettings.writingMode);
+  localStorage.setItem('reader_fontFamily',   readerSettings.fontFamily);
+}
+
+function applyReaderSettings() {
+  document.documentElement.style.setProperty('--story-font-scale', FONT_SCALES[readerSettings.fontSizeIdx]);
+  const gameScreen = $('game-screen');
+  gameScreen.classList.toggle('horizontal-mode', readerSettings.writingMode === 'horizontal');
+  gameScreen.classList.toggle('font-sans', readerSettings.fontFamily === 'sans');
+  updateReaderUI();
+}
+
+function updateReaderUI() {
+  $('font-size-label').textContent = FONT_LABELS[readerSettings.fontSizeIdx];
+  $('btn-writing-vertical').classList.toggle('active', readerSettings.writingMode === 'vertical');
+  $('btn-writing-horizontal').classList.toggle('active', readerSettings.writingMode === 'horizontal');
+  $('btn-font-serif').classList.toggle('active', readerSettings.fontFamily === 'serif');
+  $('btn-font-sans').classList.toggle('active', readerSettings.fontFamily === 'sans');
+  $('btn-font-smaller').disabled = readerSettings.fontSizeIdx === 0;
+  $('btn-font-larger').disabled  = readerSettings.fontSizeIdx === FONT_SCALES.length - 1;
+}
+
+// ── Scroll helper ─────────────────────────────────────────────────────────────
+function scrollToNewest() {
+  const scroll = $('story-scroll');
+  if (readerSettings.writingMode === 'horizontal') {
+    // 横書き: 最新エントリは上端（prepend → DOM先頭 → column先頭 = 上）
+    scroll.scrollTop = 0;
+  } else {
+    // 縦書き: 最新エントリは右端（prepend → DOM先頭 → row-reverse = 右）
+    scroll.scrollLeft = scroll.scrollWidth - scroll.clientWidth;
+  }
+}
+
+// ── Action choices ────────────────────────────────────────────────────────────
+/**
+ * GMテキストから【行動の選択肢】セクションを解析する
+ * LLMの出力バリエーションに広く対応
+ * @param {string} text
+ * @returns {{ mainText: string, choices: string[] } | null}
+ */
+function parseChoices(text) {
+  // 【行動の選択肢】マーカーを探す（末尾変化も許容）
+  const markerIdx = text.search(/【行動[^\n】]*選択肢[^\n】]*】|【選択肢[^\n】]*】/);
+  if (markerIdx === -1) return null;
+
+  const mainText = text.slice(0, markerIdx).trim();
+  const section  = text.slice(markerIdx);
+
+  let choices = [];
+
+  // 優先①: ①②③ 丸数字形式
+  const circled = [...section.matchAll(/[①②③④⑤]([^\n①②③④⑤]+)/g)]
+    .map((m) => m[1].replace(/[〔〕【】]/g, '').trim())
+    .filter(Boolean);
+
+  if (circled.length >= 2) {
+    choices = circled;
+  } else {
+    // 次点: 「1.」「２．」「1)」などの数字形式（各行）
+    const numbered = [...section.matchAll(/^[ 　]*[1-3１-３][.．）)]\s*(.+)/gm)]
+      .map((m) => m[1].trim())
+      .filter(Boolean);
+    if (numbered.length >= 2) choices = numbered;
+  }
+
+  if (choices.length === 0) return null;
+  // 最大5つに制限
+  return { mainText, choices: choices.slice(0, 5) };
+}
+
+function showActionChoices(choices) {
+  const container = $('action-choices');
+  container.innerHTML = '';
+  choices.forEach((choice) => {
+    const btn = document.createElement('button');
+    btn.className = 'choice-btn';
+    btn.textContent = choice;
+    btn.addEventListener('click', () => {
+      if (state.streaming) return;
+      $('action-input').value = choice;
+      $('btn-send').disabled = false;
+      $('action-input').focus();
+      hideActionChoices();
+    });
+    container.appendChild(btn);
+  });
+  container.classList.remove('hidden');
+}
+
+function hideActionChoices() {
+  const container = $('action-choices');
+  container.classList.add('hidden');
+  container.innerHTML = '';
+}
+
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const screens = {
   landing: document.getElementById('landing-screen'),
@@ -338,11 +446,8 @@ function addStoryEntry(type) {
   entry.className = `story-entry ${type === 'gm' ? 'gm-entry' : 'player-entry'}`;
   $('story-inner').prepend(entry);
 
-  // Scroll to show newest (leftmost) entry
-  requestAnimationFrame(() => {
-    const scroll = $('story-scroll');
-    scroll.scrollLeft = 0;
-  });
+  // Scroll to show newest entry
+  requestAnimationFrame(() => scrollToNewest());
 
   return entry;
 }
@@ -354,7 +459,9 @@ function addPlayerEntry(text) {
 }
 
 /**
- * Stream SSE response into a new story entry
+ * Stream SSE response into a new story entry.
+ * 【行動の選択肢】セクションはストリーミング中も表示せず、
+ * 生成完了後にボタンとして表示する。
  */
 async function streamToStory(response, type) {
   const entry = addStoryEntry(type);
@@ -366,25 +473,61 @@ async function streamToStory(response, type) {
   currentCursor = cursor;
 
   let fullText = '';
+  let choicesFound = false; // 選択肢マーカー検出フラグ
 
   await api.consumeStream(response, (event) => {
     if (event.type === 'text') {
+      const prevLen = fullText.length;
       fullText += event.chunk;
-      // Insert text before cursor
-      const textNode = document.createTextNode(event.chunk);
-      entry.insertBefore(textNode, cursor);
-      // Scroll to keep newest visible
-      $('story-scroll').scrollLeft = 0;
+
+      if (!choicesFound) {
+        const markerIdx = fullText.search(/【行動[^\n】]*選択肢[^\n】]*】|【選択肢[^\n】]*】/);
+
+        if (markerIdx === -1) {
+          // マーカーなし：チャンクをそのままDOM追加
+          entry.insertBefore(document.createTextNode(event.chunk), cursor);
+        } else {
+          // マーカー検出：マーカー以前の部分だけをDOMに反映
+          choicesFound = true;
+          if (markerIdx >= prevLen) {
+            // マーカーが今回のチャンク内に出現：チャンクの手前部分だけ追加
+            const visiblePart = event.chunk.slice(0, markerIdx - prevLen);
+            if (visiblePart) {
+              entry.insertBefore(document.createTextNode(visiblePart), cursor);
+            }
+          } else {
+            // マーカーが複数チャンクにまたがって出現：既存ノードを整理
+            while (entry.firstChild && entry.firstChild !== cursor) {
+              entry.removeChild(entry.firstChild);
+            }
+            const mainSoFar = fullText.slice(0, markerIdx).trimEnd();
+            if (mainSoFar) {
+              entry.insertBefore(document.createTextNode(mainSoFar), cursor);
+            }
+          }
+        }
+      }
+      // choicesFound === true の場合はDOMを更新しない（fullTextには蓄積）
+
+      scrollToNewest();
     } else if (event.type === 'status') {
       $('loading-text').textContent = event.text;
     } else if (event.type === 'done') {
       cursor.remove();
       currentStreamEntry = null;
       currentCursor = null;
-      // Update session stats if provided
+      // セッション統計を更新
       if (event.player && state.session) {
         state.session.player = event.player;
         state.session.turn = event.turn;
+      }
+      // 生成完了後に選択肢を解析してボタン表示
+      if (type === 'gm') {
+        const parsed = parseChoices(fullText);
+        if (parsed) {
+          entry.textContent = parsed.mainText;
+          showActionChoices(parsed.choices);
+        }
       }
     } else if (event.type === 'error') {
       cursor.remove();
@@ -437,6 +580,7 @@ $('btn-send').addEventListener('click', async () => {
   input.style.height = 'auto';
   $('btn-send').disabled = true;
   disableInput();
+  hideActionChoices();
 
   // Show player action
   addPlayerEntry(action);
@@ -490,6 +634,7 @@ function showDicePopup(result) {
 $('btn-rollback').addEventListener('click', async () => {
   if (state.streaming) { showToast('ストリーミング中は使用できません'); return; }
   if (!confirm('最後のターンを巻き戻しますか？')) return;
+  hideActionChoices();
 
   try {
     const res = await api.rollback(state.sessionId);
@@ -650,16 +795,33 @@ async function refreshSavesList() {
 function rehydrateStoryFromHistory(showNotification = true) {
   const inner = $('story-inner');
   inner.innerHTML = '';
+  hideActionChoices();
 
   if (!state.session?.history) return;
 
-  // 履歴は時系列順なので逆順でappend（最新が先頭＝左端）
-  [...state.session.history].reverse().forEach((entry, i, arr) => {
+  // 履歴は時系列順なので逆順でappend（最新が先頭＝左端/上端）
+  const reversed = [...state.session.history].reverse();
+
+  reversed.forEach((entry, i, arr) => {
     const type = entry.role === 'assistant' ? 'gm' : 'player';
     const el = document.createElement('div');
     el.className = `story-entry ${type === 'gm' ? 'gm-entry' : 'player-entry'}`;
     el.style.animationDelay = `${i * 30}ms`;
-    el.textContent = entry.content;
+
+    // 最初のGMエントリ（最新）の場合は選択肢を除去して表示
+    if (type === 'gm' && i === 0) {
+      const parsed = parseChoices(entry.content);
+      if (parsed) {
+        el.textContent = parsed.mainText;
+        // DOMに追加後にボタンを表示（非同期で最後に実行）
+        requestAnimationFrame(() => showActionChoices(parsed.choices));
+      } else {
+        el.textContent = entry.content;
+      }
+    } else {
+      el.textContent = entry.content;
+    }
+
     inner.appendChild(el);
 
     if (i < arr.length - 1) {
@@ -669,7 +831,7 @@ function rehydrateStoryFromHistory(showNotification = true) {
     }
   });
 
-  $('story-scroll').scrollLeft = 0;
+  scrollToNewest();
   if (showNotification) showToast('履歴を復元しました');
 }
 
@@ -715,19 +877,86 @@ function showToast(msg) {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
 }
 
+// ── Reader settings event handlers ────────────────────────────────────────────
+
+$('btn-reader').addEventListener('click', () => {
+  $('reader-panel').classList.toggle('open');
+});
+
+$('btn-font-smaller').addEventListener('click', () => {
+  if (readerSettings.fontSizeIdx > 0) {
+    readerSettings.fontSizeIdx--;
+    applyReaderSettings();
+    saveReaderSettings();
+  }
+});
+
+$('btn-font-larger').addEventListener('click', () => {
+  if (readerSettings.fontSizeIdx < FONT_SCALES.length - 1) {
+    readerSettings.fontSizeIdx++;
+    applyReaderSettings();
+    saveReaderSettings();
+  }
+});
+
+$('btn-writing-vertical').addEventListener('click', () => {
+  if (readerSettings.writingMode !== 'vertical') {
+    readerSettings.writingMode = 'vertical';
+    applyReaderSettings();
+    saveReaderSettings();
+    scrollToNewest();
+  }
+});
+
+$('btn-writing-horizontal').addEventListener('click', () => {
+  if (readerSettings.writingMode !== 'horizontal') {
+    readerSettings.writingMode = 'horizontal';
+    applyReaderSettings();
+    saveReaderSettings();
+    scrollToNewest();
+  }
+});
+
+$('btn-font-serif').addEventListener('click', () => {
+  if (readerSettings.fontFamily !== 'serif') {
+    readerSettings.fontFamily = 'serif';
+    applyReaderSettings();
+    saveReaderSettings();
+  }
+});
+
+$('btn-font-sans').addEventListener('click', () => {
+  if (readerSettings.fontFamily !== 'sans') {
+    readerSettings.fontFamily = 'sans';
+    applyReaderSettings();
+    saveReaderSettings();
+  }
+});
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
   initParticles();
+  applyReaderSettings();
 
   $('btn-start-journey').addEventListener('click', () => showScreen('setup'));
 
   // デフォルトスタイルカードを選択状態にする
   document.querySelector('.style-card[data-value="novel"]')?.classList.add('selected');
 
-  // Escキーでモーダルを閉じる
+  // Escキーでモーダルを閉じる / リーダーパネルを閉じる
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       document.querySelectorAll('.modal-overlay.open').forEach((m) => m.classList.remove('open'));
+      $('reader-panel').classList.remove('open');
+    }
+  });
+
+  // リーダーパネル外クリックで閉じる（SVG子要素も考慮）
+  document.addEventListener('click', (e) => {
+    const panel = $('reader-panel');
+    const btn = $('btn-reader');
+    if (panel.classList.contains('open') && !panel.contains(e.target) && !btn.contains(e.target)) {
+      panel.classList.remove('open');
     }
   });
 

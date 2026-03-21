@@ -256,6 +256,11 @@
       <span class="session-info" id="session-info">— 第一章</span>
     </div>
     <div class="header-right">
+      <button class="icon-btn" id="btn-reader" title="表示設定">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M4 7h16M4 12h16M4 17h10"/>
+        </svg>
+      </button>
       <button class="icon-btn" id="btn-status" title="ステータス">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/>
@@ -285,6 +290,28 @@
     </div>
   </header>
 
+  <!-- Reader settings panel -->
+  <div id="reader-panel" class="reader-panel">
+    <div class="reader-group">
+      <span class="reader-label">文字</span>
+      <button class="reader-btn" id="btn-font-smaller" title="文字を小さく">A−</button>
+      <span class="reader-value" id="font-size-label">中</span>
+      <button class="reader-btn" id="btn-font-larger" title="文字を大きく">A＋</button>
+    </div>
+    <div class="reader-sep"></div>
+    <div class="reader-group">
+      <span class="reader-label">書字</span>
+      <button class="reader-btn reader-toggle active" id="btn-writing-vertical">縦</button>
+      <button class="reader-btn reader-toggle" id="btn-writing-horizontal">横</button>
+    </div>
+    <div class="reader-sep"></div>
+    <div class="reader-group">
+      <span class="reader-label">字体</span>
+      <button class="reader-btn reader-toggle active" id="btn-font-serif">明朝</button>
+      <button class="reader-btn reader-toggle" id="btn-font-sans">ゴシック</button>
+    </div>
+  </div>
+
   <!-- Story area -->
   <main class="story-area" id="story-area">
     <div class="story-scroll" id="story-scroll">
@@ -293,6 +320,9 @@
       </div>
     </div>
   </main>
+
+  <!-- Action choices -->
+  <div id="action-choices" class="action-choices hidden"></div>
 
   <!-- Input area -->
   <footer class="input-area">

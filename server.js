@@ -82,7 +82,11 @@ async function start() {
   await loadAllAutoSaves();
 
   app.listen(config.port, () => {
-    console.log(`\n  ✨ AI TRPG Web  →  http://localhost:${config.port}\n`);
+    const localUrl = `http://localhost:${config.port}`;
+    const hostUrl = config.host ? `http://${config.host}:${config.port}` : null;
+    console.log(`\n  ✨ AI TRPG Web  →  ${localUrl}`);
+    if (hostUrl) console.log(`                    ${hostUrl}`);
+    console.log();
   });
 }
 

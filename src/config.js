@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const config = {
   // LLM
   llm: {
-    model: 'claude-sonnet-4-6',
+    model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-6',
     maxTokens: 1024,
     temperature: 0.85,
     maxHistoryTurns: 30,
@@ -19,6 +19,7 @@ export const config = {
   },
   // Server
   port: process.env.PORT || 3000,
+  host: process.env.HOST || null,
   // Paths
   paths: {
     saves: path.join(__dirname, '..', 'data', 'saves'),

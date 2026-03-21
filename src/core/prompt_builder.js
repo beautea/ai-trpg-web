@@ -56,7 +56,12 @@ export function buildSystemPrompt(session, memoriesText = '') {
 - 設定: ${player.characterDescription || '特になし'}`;
 
   const actionSuggest = rules.actionSuggestions
-    ? `各応答の末尾に「【行動の選択肢】」として3つの行動案を提示してください（プレイヤーはこれに限定されません）。`
+    ? `各応答の末尾に必ず以下の形式で3つの行動の選択肢を提示してください。
+【行動の選択肢】
+①〔選択肢1の内容〕
+②〔選択肢2の内容〕
+③〔選択肢3の内容〕
+（プレイヤーはこれらに限定されません）`
     : '';
 
   const systemPrompt = `${styleMap[rules.narrativeStyle] || styleMap.balanced}
@@ -100,7 +105,7 @@ ${rules.customSetting ? `特別設定: ${rules.customSetting}` : ''}
 - ${rules.narrativeStyle === 'novel' ? '文学的で没入感のある描写' : rules.narrativeStyle === 'trpg' ? '状況を明確に提示する描写' : '没入感と明確さを兼ねた描写'}
 - 場所、時間、雰囲気を鮮やかに描写
 - プレイヤーキャラクターが既に何らかの状況にいる形で始める
-- ${rules.actionSuggestions ? '末尾に【行動の選択肢】として3つの選択肢を提示' : '物語の続きを選択できる形で終わる'}
+- ${rules.actionSuggestions ? '末尾に以下の形式で3つの選択肢を提示：【行動の選択肢】\\n①選択肢1\\n②選択肢2\\n③選択肢3' : '物語の続きを選択できる形で終わる'}
 - 日本語のみで書くこと（Markdown記法不使用）
 - ${rules.responseLength === 'long' ? '400〜600文字' : rules.responseLength === 'short' ? '150〜250文字' : '250〜400文字'}程度`;
 }
