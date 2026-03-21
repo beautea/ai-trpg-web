@@ -1,154 +1,113 @@
-```markdown
 # AI-TRPG Web
 
-縦書き小説風表示の Web ベース AI TRPG。Claude API を GM エンジンとして使用し、プレイヤーの行動に対してリッチな物語を生成します。
+ブラウザで動作するAI-GMによるシングルプレイヤーTRPGシステム。
+Claude APIがゲームマスターを担当し、縦書き風の没入感のあるUIでストーリーテリングを実現する。
 
 ---
 
 ## 特徴
 
-- **縦書き小説風 UI** — 和風フォント・縦書きレイアウトで没入感のある読書体験（横書きモードにも切り替え可）
-- **Claude API による GM** — Anthropic SDK でストリーミング生成、リアルタイムに物語が流れる
-- **RAG メモリシステム** — ChromaDB でセッション記憶を蓄積し、関連する過去の出来事をシステムプロンプトに自動注入
-- **自動セーブ & 自動再開** — ターン終了後に自動保存、ページリロード後もセッションを透過的に復元
-- **リーダー設定パネル** — フォントサイズ・書字方向（縦／横）・書体（明朝／ゴシック）をゲーム中に変更可能
-- **行動選択肢 UI** — GM 応答末尾の `【行動の選択肢】` をパースしてボタン表示、クリックで入力欄へ反映
-- **セットアップウィザード** — ジャンル・スタイル・ルール・キャラクターを 5 ステップで設定
-- **ダイスロール** — d20 / d100（CoC）/ 3d6（D&D 5e）/ カスタム対応
-- **HP/MP 自動パース** — GM 応答から `【HP】現在: X / 最大: Y` を抽出してリアルタイム更新
-- **手動セーブ/ロード** — 任意のタイミングで保存・ロード・削除
-- **ロールバック** — 直前ターンを巻き戻してやり直し
+- **AIゲームマスター** — Claude APIがリアルタイムでストーリーを紡ぐ
+- **ストリーミング表示** — GM応答をリアルタイムに逐次表示（SSE）
+- **5ステップセットアップ** — ジャンル・スタイル・ルール・キャラクター・テーマを設定
+- **ダイスシステム対応** — d20 / CoC（d100）/ D&D 5e（3d6）/ カスタム
+- **HP/MP自動追跡** — GMの応答テキストからステータスを自動パース
+- **RAGシステム** — ChromaDBによる記憶検索でGMが文脈を長期保持
+- **行動選択肢** — GM応答末尾に選択肢ボタンを自動表示
+- **セーブ/ロード** — セッションをファイルに保存して後から再開
+- **自動セーブ・自動再開** — ページリロード時に前回のセッションを自動復元
+- **ロールバック** — 直前のターンをやり直し
+- **リーダー設定** — 文字サイズ・縦横書き・フォント種別を調整可能
+- **美麗ダークテーマ** — 長時間プレイに最適化された縦書き風UI
 
 ---
 
 ## 必要環境
 
-- Node.js 18+
-- npm
-- Anthropic API キー
-- `chroma` CLI（任意 — 未インストールでもインメモリモードで動作）
-
----
-
-## ディレクトリ構成
-
-```
-.
-├── server.js                # エントリポイント（Express + ChromaDB 起動）
-├── src/
-│   ├── config.js            # 設定値の一元管理（LLM・ChromaDB・パス）
-│   ├── routes/
-│   │   └── api.js           # REST API ルーター
-│   └── core/
-│       ├── gm_system.js     # GM ロジック（ストリーミング・RAG 統合）
-│       ├── llm_client.js    # Anthropic SDK ラッパー
-│       ├── session_store.js # インメモリ・セッション管理
-│       ├── prompt_builder.js# システムプロンプト・導入文生成
-│       ├── save_manager.js  # ファイルベース・セーブ/ロード
-│       ├── auto_save.js     # 自動セーブ（ターン終了後に非同期実行）
-│       ├── memory_store.js  # ChromaDB 接続・メモリ保存/削除
-│       └── rag_system.js    # RAG 検索・プロンプト注入
-├── public/
-│   ├── index.html
-│   ├── css/style.css
-│   └── js/
-│       ├── app.js           # フロントエンド・メインアプリ
-│       └── api.js           # フロントエンド API クライアント
-└── data/
-    ├── saves/               # 手動セーブデータ（JSON + Markdown）
-    └── chroma/              # ChromaDB 永続化データ
-```
+- Node.js 18以上
+- Anthropic APIキー
+- ChromaDB（オプション。未検出時はインメモリフォールバックで動作）
 
 ---
 
 ## セットアップ
 
 ```bash
-# 依存関係をインストール
+# 依存パッケージのインストール
 npm install
 
-# 環境変数を設定
+# 環境変数の設定
 cp .env.example .env
 # .env を編集して ANTHROPIC_API_KEY を設定
+
+# 起動
+node server.js
+# または
+./start.sh
 ```
 
-### `.env` の例
+ブラウザで `http://localhost:3000` を開く。
 
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-PORT=3000
+---
+
+## 起動スクリプト（PM2管理）
+
+```bash
+./start.sh          # 起動
+./start.sh stop     # 停止
+./start.sh restart  # 再起動
+./start.sh status   # 状態確認
+./start.sh logs     # ログ表示
+./start.sh delete   # PM2からプロセスを削除
 ```
 
 ---
 
-## 起動
+## ディレクトリ構成
 
-```bash
-# 本番起動
-npm start
-
-# 開発（ファイル変更で自動再起動）
-npm run dev
 ```
-
-起動後、ブラウザで `http://localhost:3000` を開く。
+ai-trpg-web/
+├── server.js              # Expressアプリ エントリーポイント
+├── src/
+│   ├── config.js          # LLM・サーバー・ChromaDB設定
+│   ├── routes/
+│   │   └── api.js         # APIエンドポイント
+│   └── core/
+│       ├── session_store.js   # セッション状態管理（SSoT）
+│       ├── llm_client.js      # Anthropic APIクライアント
+│       ├── gm_system.js       # AIGMオーケストレーター
+│       ├── prompt_builder.js  # プロンプト生成
+│       ├── save_manager.js    # セーブ/ロード
+│       ├── auto_save.js       # 自動セーブ・起動時セッション復元
+│       ├── memory_store.js    # ChromaDBクライアント
+│       └── rag_system.js      # RAG（検索拡張生成）
+├── public/
+│   ├── index.html         # SPA HTML
+│   ├── js/
+│   │   ├── app.js         # UIロジック
+│   │   └── api.js         # APIクライアント
+│   └── css/
+│       └── style.css      # ダークテーマ
+├── data/
+│   ├── chroma/            # ChromaDB永続化データ（.gitignore対象）
+│   └── saves/             # セーブファイル（.gitignore対象）
+├── .env.example           # 環境変数テンプレート
+└── package.json
+```
 
 ---
 
 ## 環境変数
 
 | 変数名 | 必須 | 説明 |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | ✅ | Claude API キー |
-| `PORT` | — | サーバーポート（デフォルト: `3000`） |
+|--------|------|------|
+| `ANTHROPIC_API_KEY` | ✅ | Anthropic APIキー |
+| `PORT` | — | サーバーポート（デフォルト: 3000） |
 | `CHROMA_URL` | — | ChromaDB URL（デフォルト: `http://localhost:8001`） |
-| `DEBUG` | — | ChromaDB の stderr ログを有効化 |
+| `SESSION_SECRET` | — | 将来の拡張用（現在未使用） |
 
 ---
 
-## API エンドポイント
+## 関連プロジェクト
 
-### セッション管理
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `POST` | `/api/session/new` | 新規セッション作成 |
-| `GET` | `/api/session/:id` | セッション取得（なければ自動セーブから復元） |
-| `PATCH` | `/api/session/:id` | セッション更新（セットアップ時） |
-| `DELETE` | `/api/session/:id` | セッション終了・メモリ削除 |
-
-### ゲーム進行
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `POST` | `/api/game/:id/setup-complete` | セットアップ完了・イントロ生成（SSE） |
-| `POST` | `/api/game/:id/action` | プレイヤー行動送信（SSE） |
-| `POST` | `/api/game/:id/rollback` | 直前ターンの巻き戻し |
-| `POST` | `/api/game/:id/dice` | ダイスロール |
-
-### セーブ管理
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `GET` | `/api/saves/:id` | セーブ一覧 |
-| `POST` | `/api/saves/:id` | 現在のセッションを保存 |
-| `POST` | `/api/saves/:id/load` | セーブをロード |
-| `DELETE` | `/api/saves/:id/:name` | セーブを削除 |
-
----
-
-## ChromaDB（RAG メモリ）
-
-`chroma` CLI がインストールされている場合、起動時に自動でサブプロセスを起動します。インストールされていない場合はインメモリモードで動作します（セッションをまたいだ記憶は保持されません）。
-
-```bash
-# ChromaDB CLI のインストール（任意）
-pip install chromadb
-```
-
----
-
-## ライセンス
-
-MIT
-```
+- [ai-trpg-py](../ai-trpg-py) — Discord Botとして動作するマルチプレイヤー版

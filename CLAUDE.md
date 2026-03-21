@@ -1,264 +1,277 @@
-# AI-TRPG Web — 開発ガイド
+# CLAUDE.md — AI-TRPG Web
+
+このファイルはClaudeがコードを読み書きする際のガイドです。
+
+---
 
 ## プロジェクト概要
 
-縦書き小説風表示の Web ベース AI TRPG。Claude API（Anthropic SDK）を GM エンジンとして使用し、ChromaDB による RAG 記憶システムと自動セーブ機能を備える。
+ブラウザで動作するAI-GMによるシングルプレイヤーTRPGシステム。Claude APIがゲームマスターを担当し、縦書き風の没入感のあるUIでストーリーテリングを実現する。日本語専用。
+
+**エントリーポイント**: `server.js`
+**起動**: `node server.js` または `./start.sh`
 
 ---
 
-## ファイル構成
+## アーキテクチャ原則
+
+### 構成
 
 ```
-.
-├── server.js                # エントリポイント（Express + ChromaDB起動）
-├── src/
-│   ├── config.js            # 設定値（LLM・ChromaDB・パス）
-│   ├── routes/
-│   │   └── api.js           # REST API ルーター
-│   └── core/
-│       ├── gm_system.js     # GM ロジック（ストリーミング・RAG統合）
-│       ├── llm_client.js    # Anthropic SDK ラッパー
-│       ├── session_store.js # インメモリ・セッション管理
-│       ├── prompt_builder.js# システムプロンプト・導入文生成
-│       ├── save_manager.js  # ファイルベース・セーブ/ロード
-│       ├── auto_save.js     # 自動セーブ（ターン終了後に非同期実行）
-│       ├── memory_store.js  # ChromaDB 接続・メモリ保存/削除
-│       └── rag_system.js    # RAG 検索・プロンプト注入
-├── public/
-│   ├── index.html
-│   ├── css/style.css
-│   └── js/
-│       ├── app.js           # フロントエンド・メインアプリ
-│       └── api.js           # フロントエンド API クライアント
-└── data/
-    ├── saves/               # 手動セーブデータ（JSON + Markdown）
-    └── chroma/              # ChromaDB 永続化データ
+server.js（Expressアプリ）
+  ├── src/routes/api.js         # APIエンドポイント定義
+  └── src/core/
+        ├── session_store.js   # セッション状態のSSoT（Map）
+        ├── llm_client.js      # Anthropic API通信
+        ├── gm_system.js       # AIGMオーケストレーター
+        ├── prompt_builder.js  # システムプロンプト構築
+        ├── save_manager.js    # セーブ・ロード（ファイルI/O）
+        ├── auto_save.js       # 自動セーブ・起動時セッション復元
+        ├── memory_store.js    # ChromaDBメモリストア管理
+        └── rag_system.js      # RAG（検索拡張生成）システム
 ```
 
----
+フロントエンドは `public/` 配下のVanilla JS（SPA）。
 
-## 責務分離
+### 責務分離（各モジュールが「知らないこと」が重要）
 
-| ファイル | 責務 |
-|---|---|
-| `server.js` | Express 起動、ChromaDB プロセス管理、起動シーケンス |
-| `src/config.js` | 全設定値の一元管理 |
-| `src/routes/api.js` | HTTP ルーティング、リクエスト検証 |
-| `src/core/gm_system.js` | GM 応答生成（ストリーミング）、ロールバック、RAG 呼び出し |
-| `src/core/llm_client.js` | Anthropic API 呼び出し（`chat` / `chatStream`） |
-| `src/core/session_store.js` | セッション CRUD、履歴管理、ロールバック |
-| `src/core/prompt_builder.js` | システムプロンプト・導入文・世界設定プロンプト生成 |
-| `src/core/save_manager.js` | 手動セーブ/ロード/一覧/削除 |
-| `src/core/auto_save.js` | 毎ターン後の自動セーブと起動時の全セッション復元 |
-| `src/core/memory_store.js` | ChromaDB 接続初期化、メモリ書き込み・削除 |
-| `src/core/rag_system.js` | メモリ抽出（非同期）、類似検索、プロンプト用フォーマット |
-| `public/js/app.js` | UI 制御、SSE 受信、ストーリー描画、セッション自動再開 |
-| `public/js/api.js` | `fetch` ラッパー、SSE ストリーム消費 |
+| ファイル | 責務 | 知らないこと |
+|---------|------|------------|
+| `server.js` | Expressセットアップ・静的ファイル配信・ChromaDB起動 | ゲームロジック |
+| `src/routes/api.js` | HTTPエンドポイント定義・SSEストリーム | ゲームロジック |
+| `src/core/gm_system.js` | AIGMオーケストレーター | HTTP・フロントエンド |
+| `src/core/prompt_builder.js` | システムプロンプト構築 | HTTP・LLM通信 |
+| `src/core/llm_client.js` | LLM API通信 | ゲームロジック |
+| `src/core/session_store.js` | セッション状態のSSoT | HTTP・LLM |
+| `src/core/save_manager.js` | セーブ・ロード・ファイルI/O | HTTP |
+| `src/core/auto_save.js` | 自動セーブ・起動時全セッション復元 | HTTP・LLM |
+| `src/core/memory_store.js` | ChromaDBクライアント初期化・メモリCRUD | ゲームロジック |
+| `src/core/rag_system.js` | メモリ抽出・検索・プロンプト整形 | HTTP |
+| `public/js/app.js` | UIステート管理・イベントハンドラ | サーバーロジック |
+| `public/js/api.js` | fetchラッパー・SSEパーサー | UIロジック |
+
+### Session Store はSSoT
+セッション状態（`Map`）を直接触るコードは必ず `session_store.js` に集約する。ルーター・GMSystem が直接Mapを書き換えてはならない。
 
 ---
 
 ## 設定値（`src/config.js`）
 
-| キー | デフォルト値 | 説明 |
-|---|---|---|
-| `llm.model` | `'claude-sonnet-4-6'` | 使用モデル（固定値） |
-| `llm.maxTokens` | `1024` | 最大トークン数 |
-| `llm.temperature` | `0.85` | 生成温度 |
-| `llm.maxHistoryTurns` | `30` | 保持する会話ターン数 |
-| `chroma.url` | `CHROMA_URL \|\| 'http://localhost:8001'` | ChromaDB 接続 URL |
-| `chroma.port` | `8001` | ChromaDB 起動ポート |
-| `chroma.dataDir` | `data/chroma` | ChromaDB 永続化ディレクトリ |
-| `port` | `PORT \|\| 3000` | サーバーポート |
-| `paths.saves` | `data/saves` | 手動セーブ保存先 |
+| 定数 | 値 | 変更時の注意 |
+|------|-----|------------|
+| `llm.model` | `claude-sonnet-4-6` | モデル変更時は出力品質を必ず確認 |
+| `llm.maxTokens` | `1024` | 増やすと応答が冗長になる可能性あり |
+| `llm.temperature` | `0.85` | 創作用途のため高め。下げると単調になる |
+| `llm.maxHistoryTurns` | `30` | 履歴は最大60エントリ（30往復）。増やすとトークンコスト増大 |
+| `chroma.url` | `process.env.CHROMA_URL \|\| 'http://localhost:8001'` | |
+| `chroma.port` | `8001` | |
+| `chroma.dataDir` | `data/chroma` | ChromaDB永続化ディレクトリ |
+| `port` | `process.env.PORT \|\| 3000` | |
+
+データパス定数：
+`config.paths.saves`（`data/saves/`）, `config.paths.public`（`public/`）
 
 ---
 
-## 環境変数
+## セッション状態の構造
 
-| 変数名 | 必須 | 説明 |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | ✅ | Claude API キー |
-| `PORT` | — | サーバーポート（デフォルト: 3000） |
-| `CHROMA_URL` | — | ChromaDB URL（デフォルト: `http://localhost:8001`） |
-| `DEBUG` | — | ChromaDB の stderr ログを有効化 |
-
----
-
-## セッション状態スキーマ
-
-```js
+```javascript
 {
-  id: string,
-  createdAt: number,
+  id: string,              // UUID
+  createdAt: Date,
   active: boolean,
   setupComplete: boolean,
 
   rules: {
     genre: string,
     customSetting: string,
-    diceSystem: 'none' | 'd20' | 'coc' | 'dnd5e',
-    statsMode: 'none' | 'hp' | 'hpmp',
-    narrativeStyle: 'novel' | 'trpg' | 'balanced',
+    diceSystem: string,    // "none" | "d20" | "coc" | "dnd5e"
+    statsMode: string,     // "none" | "hp" | "hpmp"
+    narrativeStyle: string, // "novel" | "trpg" | "balanced"
     actionSuggestions: boolean,
-    responseLength: 'short' | 'standard' | 'long',
+    responseLength: string, // "short" | "standard" | "long"
   },
 
   world: {
     adventureTheme: string,
-    coreConceptGenerated: string,
+    coreConceptGenerated: string,  // LLMで自動生成された世界観
   },
 
   player: {
     name: string,
     characterDescription: string,
-    hp: number | null,
-    hpMax: number | null,
-    mp: number | null,       // statsMode === 'hpmp' のときのみ使用
-    mpMax: number | null,
+    hp: number,
+    hpMax: number,
+    mp: number,
+    mpMax: number,
   },
 
-  scene: string,   // 直近 GM 応答の先頭 100 文字
+  scene: string,    // 最後のGM応答
   turn: number,
-  history: [{ role: 'user' | 'assistant', content: string }],
+  history: [{ role: "user" | "assistant", content: string }, ...],
+              // 最大60エントリ（addHistoryで自動トリム）
 }
 ```
 
 ---
 
-## API エンドポイント
+## APIエンドポイント一覧
 
-### セッション管理
+| メソッド | パス | 処理 |
+|---------|------|------|
+| POST | `/api/session/new` | セッション新規作成（UUID発行） |
+| GET | `/api/session/:id` | セッション状態取得（なければ自動セーブから復元） |
+| PATCH | `/api/session/:id` | セッション更新（セットアップ設定） |
+| DELETE | `/api/session/:id` | セッション終了・メモリ削除 |
+| POST | `/api/game/:id/setup-complete` | イントロシーン生成（SSEストリーム） |
+| POST | `/api/game/:id/action` | プレイヤー行動 → GM応答（SSEストリーム） |
+| POST | `/api/game/:id/rollback` | 直前ターンを取り消し |
+| POST | `/api/game/:id/dice` | ダイスロール |
+| GET | `/api/saves/:id` | セーブ一覧取得 |
+| POST | `/api/saves/:id` | セーブ |
+| POST | `/api/saves/:id/load` | ロード |
+| DELETE | `/api/saves/:id/:name` | セーブ削除 |
 
-| メソッド | パス | 説明 |
-|---|---|---|
-| `POST` | `/api/session/new` | 新規セッション作成 |
-| `GET` | `/api/session/:id` | セッション取得（なければ自動セーブから復元） |
-| `PATCH` | `/api/session/:id` | セッション更新（セットアップ時） |
-| `DELETE` | `/api/session/:id` | セッション終了・メモリ削除 |
+### SSEイベント形式
+`setup-complete` と `action` エンドポイントはServer-Sent Eventsでストリーミング。
 
-### ゲーム進行
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `POST` | `/api/game/:id/setup-complete` | セットアップ完了・イントロ生成（SSE） |
-| `POST` | `/api/game/:id/action` | プレイヤー行動送信（SSE） |
-| `POST` | `/api/game/:id/rollback` | 直前ターンの巻き戻し |
-| `POST` | `/api/game/:id/dice` | ダイスロール |
-
-### セーブ管理
-
-| メソッド | パス | 説明 |
-|---|---|---|
-| `GET` | `/api/saves/:id` | セーブ一覧 |
-| `POST` | `/api/saves/:id` | 現在のセッションを保存 |
-| `POST` | `/api/saves/:id/load` | セーブをロード |
-| `DELETE` | `/api/saves/:id/:name` | セーブを削除 |
-
----
-
-## SSE イベント形式
-
-### `POST /api/game/:id/setup-complete`
-
-```jsonc
-{ "type": "status", "text": "世界を構築中…" }   // 世界観生成中（任意）
-{ "type": "intro_start" }                        // イントロ生成開始
-{ "type": "text", "chunk": "..." }               // テキストチャンク
-{ "type": "done" }                               // 完了
-{ "type": "error", "message": "..." }            // エラー
-```
-
-### `POST /api/game/:id/action`
-
-```jsonc
-{ "type": "text", "chunk": "..." }                          // テキストチャンク
-{ "type": "done", "turn": 3, "player": { ...playerState } } // 完了（ステータス更新付き）
-{ "type": "error", "message": "..." }                       // エラー
+```javascript
+{ type: 'text',        chunk: string }              // テキストチャンク
+{ type: 'done',        turn?: number, player?: {...} } // 完了（actionのみturn/playerを含む）
+{ type: 'error',       message: string }             // エラー
+{ type: 'status',      text: string }                // ステータスメッセージ
+{ type: 'intro_start' }                              // イントロ開始通知（setup-completeのみ）
 ```
 
 ---
 
-## 実装ルール
+## 重要な実装ルール
 
-### RAG（関連メモリ検索）
+### LLMClient はエラーを投げない
+`llm_client.chat()` / `chatStream()` はすべての例外を捕捉し、`⚠️` 始まりの文字列として返す。呼び出し側でエラー判定が必要な場合は返り値の先頭文字で判断する。
 
-- `processActionStream` はプレイヤー行動をクエリとして `retrieveRelevantMemories` を呼び出し、結果を `buildSystemPrompt` に渡す
-- `extractAndStoreMemoryAsync` はレスポンスをブロックしないよう非同期で実行する
-- ChromaDB が利用不可の場合はインメモリフォールバックで動作する（`initMemoryStore` がハンドリング）
+### ストリーミングはSSEで実装
+`res.setHeader('Content-Type', 'text/event-stream')` でSSE接続を確立し、`res.write()` でチャンクを送信する。`chatStream(system, messages, onChunk)` の `onChunk` コールバックでチャンクを受け取る。
+
+### HP/MP の自動パース
+GMの応答テキストから `【HP】現在: X / 最大: Y` 形式を正規表現で抽出して `player.hp/hpMax` を更新する（`gm_system.parseAndUpdateStats()` 参照）。`statsMode === "hpmp"` の場合は `【MP】現在: X / 最大: Y` も更新。`statsMode === "none"` の場合は何もしない。
+
+### RAGシステム
+`processActionStream()` はプレイヤー行動をもとに `rag_system.retrieveRelevantMemories()` で関連メモリを検索し、システムプロンプトに注入する。GM応答後は `extractAndStoreMemoryAsync()` で非同期にメモリを抽出・格納する（レスポンスをブロックしない）。
 
 ### 自動セーブ
-
-- `autoSave(sessionId)` は各ターン終了後に `gm_system.js` から非同期呼び出しされる
-- `loadAllAutoSaves()` はサーバー起動時に実行され、`data/saves` からセッションを復元する
-- フロント側では `localStorage.currentSessionId` を保持し、ページリロード時に `GET /api/session/:id` で復元を試みる
+`processActionStream()` と `generateIntroStream()` の完了後、`auto_save.autoSave()` を非同期で呼び出す。起動時は `loadAllAutoSaves()` で `data/saves/` 配下の自動セーブを全セッション分メモリに復元する。
 
 ### ChromaDB
+`server.js` 起動時に `chroma` CLIが検出できればローカルプロセスとしてChromaDBサーバーを起動する。未検出の場合はインメモリフォールバックで動作する。`memory_store.initMemoryStore(url)` で接続初期化する。
 
-- `server.js` が起動時に `chroma` CLI でサブプロセスを起動する
-- `chroma` CLI が存在しない場合は警告のみでサーバー起動を続行する
-- データは `data/chroma/` ディレクトリに永続化される
+### セーブ形式
+`data/saves/{sessionId}/{saveName}.json` + `{saveName}_summary.md` の2ファイル形式。JSONにはセッション全状態を保存し、MDは人間向けサマリー。
 
-### HP/MP パース
+### プロンプトの文字数制限
+GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_builder.buildSystemPrompt()` 内で注入）。
 
-- GM 応答テキストから `【HP】現在: X / 最大: Y` 形式を正規表現で抽出して自動更新する
-- `【MP】現在: X / 最大: Y` の抽出・更新は `statsMode === 'hpmp'` のときのみ実行する
+| 設定値 | 文字数制限 |
+|--------|----------|
+| `short` | 100〜200文字 |
+| `standard`（デフォルト） | 200〜400文字 |
+| `long` | 400〜700文字 |
 
-### ストリーミング
+### フロントエンドの画面遷移
+5つの画面（div）をCSSのopacityとdisplayで切り替える。`showScreen(name)` 経由で遷移し、直接CSSを操作しない。
 
-- `chatStream` は Anthropic SDK の `stream: true` オプションを使用する
-- `content_block_delta` イベントの `text_delta` のみを処理する
-- フロント側では `consumeStream`（`api.js`）が `fetch` レスポンスボディを読み取り、SSE をパースする
+### セットアップウィザードのステップ
+ステップ0〜4でルール・キャラクターを設定し、ステップ5でゲーム画面へ遷移する。各ステップの状態は `state.setupStep` で管理する。
+
+### 自動再開（フロントエンド）
+ページリロード時、`localStorage` の `currentSessionId` をもとに `tryResumeSession()` でセッションを復元する。セッション終了時は `localStorage.removeItem('currentSessionId')` でクリアする。
 
 ### 行動選択肢
-
-- `【行動の選択肢】` マーカーをフロント側でパースし、マーカー以降はストーリー本文に表示しない
-- ストリーミング中もマーカー検出後はDOMに追記しない（`fullText` には蓄積する）
-- 生成完了後に `parseChoices` でボタンとして表示する
+GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoices()` で本文と選択肢を分離し、選択肢をボタンとして表示する。ストリーミング中は選択肢セクションをDOMに出力せず、生成完了後に反映する。
 
 ---
 
 ## セッションフロー
 
 ```
-[新規]
 ランディング画面
-  → セットアップウィザード（5ステップ）
-  → POST /api/session/new
-  → PATCH /api/session/:id（ルール・キャラクター設定）
-  → POST /api/game/:id/setup-complete（SSEイントロ生成）
-  → sessionId を localStorage に保存
-  → ゲーム画面
+    ↓ [冒険を始める]
+セットアップ画面（5ステップ）
+    ステップ0: ジャンル選択（6種 + カスタム）
+    ステップ1: 語りスタイル（novel / trpg / balanced）
+    ステップ2: ルール（ダイス・能力値・文章量・行動提案）
+    ステップ3: キャラクター作成（名前 + 説明）
+    ステップ4: 冒険テーマ（プリセット6種 + カスタム）
+    ↓ [物語を始める]
+ローディング画面
+    → POST /api/session/new            → UUID発行
+    → PATCH /api/session/:id           → ルール・ワールド・プレイヤー設定
+    → POST /api/game/:id/setup-complete → イントロシーン生成（SSEストリーム）
+        ├─ カスタムテーマの場合: generateWorldConcept()
+        └─ イントロシーンをストリーミング表示
+ゲーム画面（ターンループ）
+    プレイヤーテキスト入力
+    → POST /api/game/:id/action → GM応答（SSEストリーム）
+    → HP/MPパース → RAGメモリ抽出 → 自動セーブ → セッション更新
 
-[ページリロード時の自動再開]
-init()
-  → localStorage.currentSessionId を確認
-  → GET /api/session/:id（サーバーメモリになければ自動セーブから復元）
-  → setupComplete && active であればゲーム画面を復元
-  → history から story エントリを再構築（rehydrateStoryFromHistory）
-
-[ターン進行]
-プレイヤー入力
-  → POST /api/game/:id/action（SSEストリーミング）
-  → RAG: retrieveRelevantMemories でシステムプロンプトに注入
-  → GM 応答をストーリーに追記
-  → HP/MP 自動パース
-  → extractAndStoreMemoryAsync（非同期）
-  → autoSave（非同期）
-  → done イベントでステータス更新
-
-[セッション終了]
-  → DELETE /api/session/:id（メモリ削除）
-  → localStorage.currentSessionId を削除
+サイドアクション:
+    • ダイス: POST /api/game/:id/dice
+    • ロールバック: POST /api/game/:id/rollback
+    • セーブ: POST /api/saves/:id
+    • ロード: POST /api/saves/:id/load
+    • 終了: DELETE /api/session/:id
 ```
 
 ---
 
-## 依存パッケージ
+## データディレクトリ構成
 
-| パッケージ | 用途 |
-|---|---|
-| `@anthropic-ai/sdk` | Claude API クライアント |
-| `chromadb` | ベクトルDB クライアント（RAG） |
-| `express` | Web サーバー |
-| `dotenv` | 環境変数読み込み |
-| `uuid` | セッション ID 生成 |
+```
+data/
+├── chroma/                      # ChromaDB永続化データ
+└── saves/{sessionId}/
+    ├── {saveName}.json          # セッション全状態（機械読み取り）
+    └── {saveName}_summary.md    # 人間向けサマリー
+```
+
+---
+
+## コーディング規約
+
+- コメント・docstringは**日本語**
+- 各モジュールの先頭に責務を明記するコメントを書く
+- ESモジュール（`import/export`）を使用（`"type": "module"` in package.json）
+- 非同期処理は `async/await` を徹底する
+- フロントエンドのAPIコールは `public/js/api.js` 経由で行う
+
+---
+
+## 環境変数（`.env`）
+
+```env
+ANTHROPIC_API_KEY=sk-ant-...   # 必須
+PORT=3000                       # サーバーポート（デフォルト: 3000）
+CHROMA_URL=http://localhost:8001 # ChromaDB URL（省略時はデフォルト値）
+SESSION_SECRET=your-secret      # 将来の拡張用（現在未使用）
+```
+
+---
+
+## よく使うコマンド
+
+```bash
+# 起動
+node server.js
+
+# 開発（ホットリロード）
+npm run dev
+
+# PM2で管理する場合
+./start.sh          # 起動
+./start.sh stop     # 停止
+./start.sh status   # 状態確認
+./start.sh logs     # ログ表示
+
+# 依存インストール
+npm install
+```
