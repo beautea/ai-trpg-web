@@ -10,27 +10,15 @@ import {
   buildIntroPrompt,
   buildWorldGenPrompt,
 } from './prompt_builder.js';
+import {
+  extractAndStoreMemoryAsync,
+  retrieveRelevantMemories,
+  formatMemoriesForPrompt,
+} from './rag_system.js';
+import { autoSave } from './auto_save.js';
 
 /**
- * Generate opening scene and store as first assistant message
- */
-export async function generateIntro(sessionId) {
-  const session = getSession(sessionId);
-  if (!session) throw new Error('Session not found');
-
-  const prompt = buildIntroPrompt(session);
-  const response = await chat('あなたは優れた小説家兼ゲームマスターです。', [
-    { role: 'user', content: prompt },
-  ]);
-
-  // Store the intro as first assistant message
-  addHistory(sessionId, 'assistant', response);
-  updateSession(sessionId, { scene: response.slice(0, 100) + '…', turn: 0 });
-  return response;
-}
-
-/**
- * Generate opening scene with streaming
+ * イントロシーン生成（ストリーミング）
  */
 export async function generateIntroStream(sessionId, onChunk) {
   const session = getSession(sessionId);
@@ -45,42 +33,71 @@ export async function generateIntroStream(sessionId, onChunk) {
 
   addHistory(sessionId, 'assistant', fullText);
   updateSession(sessionId, { scene: fullText.slice(0, 100) + '…', turn: 0 });
+
+  // イントロ内容もメモリに格納（世界観・初期状況）
+  extractAndStoreMemoryAsync(sessionId, 0, 'セッション開始', fullText);
+  autoSave(sessionId);
+
   return fullText;
 }
 
 /**
- * Process player action (streaming)
+ * イントロシーン生成（非ストリーミング）
+ */
+export async function generateIntro(sessionId) {
+  const session = getSession(sessionId);
+  if (!session) throw new Error('Session not found');
+
+  const prompt = buildIntroPrompt(session);
+  const response = await chat('あなたは優れた小説家兼ゲームマスターです。', [
+    { role: 'user', content: prompt },
+  ]);
+
+  addHistory(sessionId, 'assistant', response);
+  updateSession(sessionId, { scene: response.slice(0, 100) + '…', turn: 0 });
+  return response;
+}
+
+/**
+ * プレイヤー行動を処理してGM応答をストリーミング
+ * 関連メモリをRAGで検索してシステムプロンプトに注入する
  */
 export async function processActionStream(sessionId, playerInput, onChunk) {
   const session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
-  // Add player input to history
+  // プレイヤー行動を履歴に追加
   addHistory(sessionId, 'user', playerInput);
 
-  const systemPrompt = buildSystemPrompt(session);
-  const messages = session.history.map((h) => ({
-    role: h.role,
-    content: h.content,
-  }));
+  // RAG: 現在の行動に関連するメモリを検索
+  const memories = await retrieveRelevantMemories(sessionId, playerInput);
+  const memoriesText = formatMemoriesForPrompt(memories);
+
+  const systemPrompt = buildSystemPrompt(session, memoriesText);
+  const messages = session.history.map((h) => ({ role: h.role, content: h.content }));
 
   const fullText = await chatStream(systemPrompt, messages, onChunk);
 
-  // Store GM response
+  // GM応答を履歴に追加
   addHistory(sessionId, 'assistant', fullText);
+  const newTurn = session.turn + 1;
   updateSession(sessionId, {
-    turn: session.turn + 1,
+    turn: newTurn,
     scene: fullText.slice(0, 100) + '…',
   });
 
-  // Parse HP/MP from response if stats are tracked
+  // HP/MP自動パース
   parseAndUpdateStats(sessionId, fullText);
+
+  // 非同期（レスポンスをブロックしない）: メモリ抽出 + 自動セーブ
+  extractAndStoreMemoryAsync(sessionId, newTurn, playerInput, fullText);
+  autoSave(sessionId);
 
   return fullText;
 }
 
 /**
- * Process player action (non-streaming, for save summaries etc.)
+ * プレイヤー行動を処理（非ストリーミング）
  */
 export async function processAction(sessionId, playerInput) {
   const session = getSession(sessionId);
@@ -88,11 +105,10 @@ export async function processAction(sessionId, playerInput) {
 
   addHistory(sessionId, 'user', playerInput);
 
-  const systemPrompt = buildSystemPrompt(session);
-  const messages = session.history.map((h) => ({
-    role: h.role,
-    content: h.content,
-  }));
+  const memories = await retrieveRelevantMemories(sessionId, playerInput);
+  const memoriesText = formatMemoriesForPrompt(memories);
+  const systemPrompt = buildSystemPrompt(session, memoriesText);
+  const messages = session.history.map((h) => ({ role: h.role, content: h.content }));
 
   const response = await chat(systemPrompt, messages);
   addHistory(sessionId, 'assistant', response);
@@ -102,14 +118,14 @@ export async function processAction(sessionId, playerInput) {
 }
 
 /**
- * Rollback last turn
+ * 直前ターンをロールバック
  */
 export function rollback(sessionId) {
   return rollbackHistory(sessionId);
 }
 
 /**
- * Generate session summary for saving
+ * セーブ用セッションサマリーを生成
  */
 export async function generateSummary(sessionId) {
   const session = getSession(sessionId);
@@ -140,7 +156,7 @@ ${historyText}
 }
 
 /**
- * Generate world core concept
+ * カスタムテーマ用ワールドコアコンセプトを生成
  */
 export async function generateWorldConcept(sessionId) {
   const session = getSession(sessionId);
@@ -163,14 +179,14 @@ function parseAndUpdateStats(sessionId, text) {
   const session = getSession(sessionId);
   if (!session || session.rules.statsMode === 'none') return;
 
-  // Parse 【HP】現在: X / 最大: Y
+  // 【HP】現在: X / 最大: Y
   const hpMatch = text.match(/【HP】現在[:：]\s*(\d+)\s*[\/／]\s*最大[:：]\s*(\d+)/);
   if (hpMatch) {
     const player = { ...session.player, hp: parseInt(hpMatch[1]), hpMax: parseInt(hpMatch[2]) };
     updateSession(sessionId, { player });
   }
 
-  // Parse 【MP】現在: X / 最大: Y
+  // 【MP】現在: X / 最大: Y
   const mpMatch = text.match(/【MP】現在[:：]\s*(\d+)\s*[\/／]\s*最大[:：]\s*(\d+)/);
   if (mpMatch && session.rules.statsMode === 'hpmp') {
     const player = { ...session.player, mp: parseInt(mpMatch[1]), mpMax: parseInt(mpMatch[2]) };

@@ -5,6 +5,7 @@ import {
   getSession,
   updateSession,
   deleteSession,
+  restoreSession,
 } from '../core/session_store.js';
 import {
   generateIntroStream,
@@ -18,6 +19,8 @@ import {
   loadSave,
   deleteSave,
 } from '../core/save_manager.js';
+import { loadAutoSave } from '../core/auto_save.js';
+import { deleteSessionMemories } from '../core/memory_store.js';
 
 const router = Router();
 
@@ -30,9 +33,19 @@ router.post('/session/new', (req, res) => {
   res.json({ sessionId: id, session });
 });
 
-/** GET /api/session/:id — Get session state */
-router.get('/session/:id', (req, res) => {
-  const session = getSession(req.params.id);
+/** GET /api/session/:id — Get session state（メモリにない場合は自動セーブから復元） */
+router.get('/session/:id', async (req, res) => {
+  let session = getSession(req.params.id);
+
+  // セッションがメモリにない場合、自動セーブから復元を試みる
+  if (!session) {
+    const data = await loadAutoSave(req.params.id);
+    if (data?.setupComplete) {
+      restoreSession(req.params.id, data);
+      session = getSession(req.params.id);
+    }
+  }
+
   if (!session) return res.status(404).json({ error: 'Session not found' });
   res.json(session);
 });
@@ -47,7 +60,10 @@ router.patch('/session/:id', (req, res) => {
 
 /** DELETE /api/session/:id — End session */
 router.delete('/session/:id', (req, res) => {
-  deleteSession(req.params.id);
+  const id = req.params.id;
+  deleteSession(id);
+  // メモリを非同期で削除（エラーは無視）
+  deleteSessionMemories(id).catch(() => {});
   res.json({ ok: true });
 });
 

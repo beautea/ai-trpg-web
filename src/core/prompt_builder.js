@@ -1,7 +1,9 @@
 /**
- * Builds the GM system prompt from session state
+ * GMシステムプロンプトを構築する
+ * @param {object} session - セッション状態
+ * @param {string} memoriesText - RAGで検索した関連メモリテキスト（省略可）
  */
-export function buildSystemPrompt(session) {
+export function buildSystemPrompt(session, memoriesText = '') {
   const { rules, world, player } = session;
 
   // Narrative style instructions
@@ -62,6 +64,7 @@ export function buildSystemPrompt(session) {
 ${genreNote}${worldNote}
 
 ${playerNote}
+${memoriesText}
 
 ${diceInstructions}
 ${statsInstructions}

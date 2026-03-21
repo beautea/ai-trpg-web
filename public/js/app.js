@@ -202,6 +202,59 @@ $('btn-begin').addEventListener('click', async () => {
   await beginSession();
 });
 
+// ── Auto-resume ───────────────────────────────────────────────────────────────
+
+/**
+ * localStorageに保存されたセッションIDから前回の続きを復元する
+ * @param {string} sessionId
+ * @returns {Promise<boolean>} 復元成功可否
+ */
+async function tryResumeSession(sessionId) {
+  try {
+    const session = await api.getSession(sessionId);
+    // エラーレスポンスまたは未完了セッションは無視
+    if (!session || session.error || !session.setupComplete || !session.active) {
+      localStorage.removeItem('currentSessionId');
+      return false;
+    }
+
+    state.sessionId = sessionId;
+    state.session = session;
+
+    // setupDataをセッション状態から復元（ステータスモーダル等で使用）
+    Object.assign(setupData, {
+      genre: session.rules.genre,
+      customSetting: session.rules.customSetting,
+      narrativeStyle: session.rules.narrativeStyle,
+      diceSystem: session.rules.diceSystem,
+      statsMode: session.rules.statsMode,
+      responseLength: session.rules.responseLength,
+      actionSuggestions: session.rules.actionSuggestions,
+      charName: session.player.name,
+      charDesc: session.player.characterDescription,
+      adventureTheme: session.world.adventureTheme,
+    });
+
+    // ゲーム画面を準備
+    $('story-inner').innerHTML = '';
+    $('session-info').textContent = `— ${session.player.name}の物語`;
+
+    if (session.rules.diceSystem !== 'none') {
+      $('dice-btn-wrap').style.display = 'block';
+      $('dice-label').textContent = session.rules.diceSystem === 'coc' ? 'd100' : session.rules.diceSystem;
+    }
+
+    showScreen('game');
+    rehydrateStoryFromHistory(false); // トーストなしで復元
+    enableInput();
+    showToast('前回のセッションを再開しました');
+    return true;
+  } catch {
+    localStorage.removeItem('currentSessionId');
+    return false;
+  }
+}
+
 // ── Start session ─────────────────────────────────────────────────────────────
 async function beginSession() {
   showScreen('loading');
@@ -211,6 +264,8 @@ async function beginSession() {
     // Create session
     const { sessionId } = await api.newSession();
     state.sessionId = sessionId;
+    // セッションIDをlocalStorageに保存（ページリロード対応）
+    localStorage.setItem('currentSessionId', sessionId);
 
     // Patch session with setup data
     await api.patchSession(sessionId, {
@@ -588,13 +643,17 @@ async function refreshSavesList() {
   });
 }
 
-function rehydrateStoryFromHistory() {
+/**
+ * セッション履歴からストーリー表示を再構築
+ * @param {boolean} showNotification - トースト通知を表示するか（デフォルトtrue）
+ */
+function rehydrateStoryFromHistory(showNotification = true) {
   const inner = $('story-inner');
   inner.innerHTML = '';
 
   if (!state.session?.history) return;
 
-  // History is stored in chronological order; we prepend in reverse so newest is first
+  // 履歴は時系列順なので逆順でappend（最新が先頭＝左端）
   [...state.session.history].reverse().forEach((entry, i, arr) => {
     const type = entry.role === 'assistant' ? 'gm' : 'player';
     const el = document.createElement('div');
@@ -611,13 +670,15 @@ function rehydrateStoryFromHistory() {
   });
 
   $('story-scroll').scrollLeft = 0;
-  showToast('履歴を復元しました');
+  if (showNotification) showToast('履歴を復元しました');
 }
 
 // ── End session ───────────────────────────────────────────────────────────────
 $('btn-end').addEventListener('click', async () => {
   if (!confirm('セッションを終了しますか？')) return;
   await api.deleteSession(state.sessionId);
+  // セッション終了時はlocalStorageをクリア
+  localStorage.removeItem('currentSessionId');
   state.sessionId = null;
   state.session = null;
   showScreen('landing');
@@ -655,21 +716,31 @@ function showToast(msg) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-function init() {
-  showScreen('landing');
+async function init() {
   initParticles();
 
   $('btn-start-journey').addEventListener('click', () => showScreen('setup'));
 
-  // Default style card selection
+  // デフォルトスタイルカードを選択状態にする
   document.querySelector('.style-card[data-value="novel"]')?.classList.add('selected');
 
-  // Keyboard shortcut: Escape closes modals
+  // Escキーでモーダルを閉じる
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       document.querySelectorAll('.modal-overlay.open').forEach((m) => m.classList.remove('open'));
     }
   });
+
+  // ページリロード時の自動再開: localStorageにセッションIDが残っていれば復元を試みる
+  const savedSessionId = localStorage.getItem('currentSessionId');
+  if (savedSessionId) {
+    showScreen('loading');
+    $('loading-text').textContent = 'セッションを復元中…';
+    const resumed = await tryResumeSession(savedSessionId);
+    if (!resumed) showScreen('landing');
+  } else {
+    showScreen('landing');
+  }
 }
 
 init();
