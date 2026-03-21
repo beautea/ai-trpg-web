@@ -182,7 +182,7 @@ GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_b
 | `long` | 400〜700文字 |
 
 ### フロントエンドの画面遷移
-5つの画面（div）をCSSのopacityとdisplayで切り替える。`showScreen(name)` 経由で遷移し、直接CSSを操作しない。
+5つの画面（div）をCSSのopacityとdisplayで切り替える。`showScreen(name)` 経由で遷移し、直接CSSを操作しない。`showScreen()` はランディング画面への遷移時に `particlesCtrl?.restart()`、それ以外の画面への遷移時に `particlesCtrl?.stop()` を呼び出してパーティクルを制御する。
 
 ### セットアップウィザードのステップ
 ステップ0〜4でルール・キャラクターを設定し、ステップ5でゲーム画面へ遷移する。各ステップの状態は `state.setupStep` で管理する。
@@ -191,18 +191,28 @@ GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_b
 ページリロード時、`localStorage` の `currentSessionId` をもとに `tryResumeSession()` でセッションを復元する。セッション終了時は `localStorage.removeItem('currentSessionId')` でクリアする。
 
 ### 行動選択肢
-GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoices()` で本文と選択肢を分離し、選択肢をボタンとして表示する。ストリーミング中は選択肢セクションをDOMに出力せず、生成完了後に反映する。
+GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoices()` で本文と選択肢を分離し、選択肢をボタンとして表示する。ストリーミング中は選択肢セクションをDOMに出力せず、生成完了後に反映する。`parseChoices()` は丸数字形式（①②③）を優先し、次点で数字形式（1. 2. 3.）に対応する。
+
+### 確認ダイアログ（`showConfirm()`）
+ネイティブの `window.confirm()` は使用しない。代わりに `showConfirm(message, options)` を使う。`Promise<boolean>` を返すスタイル付きモーダルで、`ok`（ボタンラベル）・`cancel`（キャンセルラベル）・`danger`（`true` で赤ボタン）オプションを受け取る。ロールバック・セーブ削除・ロード・セッション終了の各操作で使用する。HTML 側の対応要素は `#modal-confirm`・`#confirm-message`・`#btn-confirm-ok`・`#btn-confirm-cancel`。
 
 ### 静的ファイルのキャッシュバスティング
 `server.js` 起動時に `BUILD_TS = Date.now()` を生成する。SPA フォールバックで `index.html` を動的に読み込み、`/css/` および `/js/` の URL に `?v=BUILD_TS` を注入して返す。`express.static` は `index: false` で `index.html` の自動配信を無効化し、必ず SPA フォールバック経由で提供する。Cloudflare 等 CDN のエッジキャッシュバイパスのため、全静的ファイルに `Cache-Control: no-cache` を設定する。
 
 ### リーダー設定パネル（フロントエンド）
-`readerSettings` は IIFE で `localStorage` から読み込み、不正値はデフォルトにフォールバックする。`initReaderPanel()` が全ボタンのイベントリスナーを登録し `init()` から呼ぶ。状態変更は `syncReaderUI()` で全トグルボタンの `.active` クラスと CSS 変数を一括同期する。`toggleReaderPanel(forceClose)` でパネルの開閉を制御する。
+`readerSettings` は IIFE で `localStorage` から読み込み、不正値はデフォルトにフォールバックする。保持するキーは `fontSizeIdx`・`writingMode`・`fontFamily`・`liteMode`（軽量モード）の4種。`initReaderPanel()` が全ボタンのイベントリスナーを登録し `init()` から呼ぶ。状態変更は `syncReaderUI()` で全トグルボタンの `.active` クラスと CSS 変数を一括同期する（エフェクトボタン `#btn-effect-full`・`#btn-effect-lite` も含む）。`toggleReaderPanel(forceClose)` でパネルの開閉を制御する。
+
+軽量モード（`liteMode`）切り替え時はパーティクルアニメーションも連動して停止・再開する。`applyReaderSettings()` が CSS カスタムプロパティ・クラス・パーティクル制御をまとめて行う。軽量モードは `html` 要素への `.lite-mode` クラス付与で全体のエフェクトを制御し、ページ読み込み直後に `<script>` タグ（`app.js` より前）で即時適用してチカつきを防ぐ。
+
+### パーティクルコントローラー
+`initParticles()` は `{ stop, restart }` を持つコントローラーオブジェクトを返す。`init()` でこれを `particlesCtrl` に格納し、`showScreen()` および `applyReaderSettings()` から呼び出す。背景グラジェントは CSS の `radial-gradient` に移管済みのため、canvas は描画クリアのみ行う。パーティクルの色は初期化時に文字列で事前計算し毎フレームのテンプレートリテラル生成を回避する。リサイズイベントは150msのデバウンスを挟む。
 
 ### ストーリー表示の書字方向とスクロール
 `writing-mode: vertical-rl` は `.story-entry` 要素に設定し、フレックスコンテナ `.story-inner` には設定しない（コンテナに設定するとフレックスの主軸が縦方向に変わり上方向スクロールになるため）。
 - **縦書き**: `overflow-x: auto`、`.story-inner` は `flex-direction: row`（最新エントリが左端・古いエントリが右端）、エントリは `prepend`、`scrollToNewest()` は `scrollLeft = 0`（左端の最新エントリを表示）
 - **横書き**: `overflow-y: auto`、エントリは `append`（最新エントリが下端）、`scrollToNewest()` は `scrollTop = scrollHeight`（下端の最新エントリを表示）
+
+`scrollToNewest()` は `requestAnimationFrame` 内で実行し、`_scrollPending` フラグで連続呼び出しを抑制する。
 
 書字方向によってDOM操作の方向が変わる箇所：
 - `addStoryEntry()`: 縦書きは `prepend`、横書きは `append`

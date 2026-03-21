@@ -22,13 +22,15 @@ const readerSettings = (() => {
   const idx = Number.isFinite(rawIdx) && rawIdx >= 0 && rawIdx < FONT_SCALES.length ? rawIdx : 2;
   const mode = localStorage.getItem('reader_writingMode') === 'horizontal' ? 'horizontal' : 'vertical';
   const family = localStorage.getItem('reader_fontFamily') === 'sans' ? 'sans' : 'serif';
-  return { fontSizeIdx: idx, writingMode: mode, fontFamily: family };
+  const liteMode = localStorage.getItem('reader_liteMode') === 'true';
+  return { fontSizeIdx: idx, writingMode: mode, fontFamily: family, liteMode };
 })();
 
 function saveReaderSettings() {
   localStorage.setItem('reader_fontSizeIdx', readerSettings.fontSizeIdx);
   localStorage.setItem('reader_writingMode',  readerSettings.writingMode);
   localStorage.setItem('reader_fontFamily',   readerSettings.fontFamily);
+  localStorage.setItem('reader_liteMode',     readerSettings.liteMode);
 }
 
 function applyReaderSettings() {
@@ -38,6 +40,14 @@ function applyReaderSettings() {
   const gameScreen = $('game-screen');
   gameScreen.classList.toggle('horizontal-mode', readerSettings.writingMode === 'horizontal');
   gameScreen.classList.toggle('font-sans',       readerSettings.fontFamily  === 'sans');
+  // 軽量モードをhtmlタグに反映（全体のエフェクト制御）
+  document.documentElement.classList.toggle('lite-mode', readerSettings.liteMode);
+  // 軽量モードではランディング画面のパーティクルも停止、通常モードでは再開
+  if (readerSettings.liteMode) {
+    particlesCtrl?.stop();
+  } else if (screens.landing?.classList.contains('active')) {
+    particlesCtrl?.restart();
+  }
   // UIの表示状態を同期
   syncReaderUI();
 }
@@ -50,6 +60,8 @@ function syncReaderUI() {
   $('btn-writing-horizontal').classList.toggle('active', readerSettings.writingMode === 'horizontal');
   $('btn-font-serif').classList.toggle('active', readerSettings.fontFamily === 'serif');
   $('btn-font-sans').classList.toggle('active',  readerSettings.fontFamily === 'sans');
+  $('btn-effect-full').classList.toggle('active', !readerSettings.liteMode);
+  $('btn-effect-lite').classList.toggle('active',  readerSettings.liteMode);
 }
 
 // パネルの開閉（btn-readerにも開閉状態を反映）
@@ -64,15 +76,21 @@ function toggleReaderPanel(forceClose = false) {
 }
 
 // ── Scroll helper ─────────────────────────────────────────────────────────────
+let _scrollPending = false;
 function scrollToNewest() {
-  const scroll = $('story-scroll');
-  if (readerSettings.writingMode === 'horizontal') {
-    // 横書き: 最新エントリは下端（append → DOM末尾 = 下）
-    scroll.scrollTop = scroll.scrollHeight;
-  } else {
-    // 縦書き: 最新エントリは左端（prepend → DOM先頭 → 縦書きは右→左方向）
-    scroll.scrollLeft = 0;
-  }
+  if (_scrollPending) return;
+  _scrollPending = true;
+  requestAnimationFrame(() => {
+    const scroll = $('story-scroll');
+    if (readerSettings.writingMode === 'horizontal') {
+      // 横書き: 最新エントリは下端（append → DOM末尾 = 下）
+      scroll.scrollTop = scroll.scrollHeight;
+    } else {
+      // 縦書き: 最新エントリは左端（prepend → DOM先頭 → 縦書きは右→左方向）
+      scroll.scrollLeft = 0;
+    }
+    _scrollPending = false;
+  });
 }
 
 // ── Action choices ────────────────────────────────────────────────────────────
@@ -147,8 +165,18 @@ const screens = {
 
 const $ = (id) => document.getElementById(id);
 
+// ── Particles controller ──────────────────────────────────────────────────────
+// initParticles() の戻り値を格納。init() で設定される
+let particlesCtrl = null;
+
 // ── Screen transitions ────────────────────────────────────────────────────────
 function showScreen(name) {
+  // ランディング画面から離れる時はパーティクルを停止、戻る時は再開
+  if (name === 'landing') {
+    particlesCtrl?.restart();
+  } else {
+    particlesCtrl?.stop();
+  }
   Object.entries(screens).forEach(([k, el]) => {
     if (k === name) {
       el.style.display = 'flex';
@@ -164,7 +192,7 @@ function showScreen(name) {
 function initParticles() {
   const canvas = $('particle-canvas');
   const ctx = canvas.getContext('2d');
-  let W, H, particles;
+  let W, H, particles, rafId = null;
 
   function resize() {
     W = canvas.width = window.innerWidth;
@@ -179,19 +207,16 @@ function initParticles() {
       vx: (Math.random() - 0.5) * 0.3,
       vy: (Math.random() - 0.5) * 0.3,
       alpha: Math.random() * 0.6 + 0.1,
-      hue: Math.random() < 0.5 ? 270 : 45, // purple or gold
+      // 色はあらかじめ文字列で計算して保持（毎フレームのテンプレートリテラル生成を回避）
+      color: Math.random() < 0.5
+        ? `hsla(270, 70%, 65%, ${(Math.random() * 0.6 + 0.1).toFixed(2)})`
+        : `hsla(45, 70%, 65%, ${(Math.random() * 0.6 + 0.1).toFixed(2)})`,
     }));
   }
 
   function draw() {
+    // 背景はCSSで描画するのでcanvasはクリアのみ（毎フレームのグラジェント生成を回避）
     ctx.clearRect(0, 0, W, H);
-
-    // Deep radial gradient bg
-    const grad = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) / 1.5);
-    grad.addColorStop(0, 'rgba(20,15,40,1)');
-    grad.addColorStop(1, 'rgba(5,5,8,1)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, W, H);
 
     particles.forEach((p) => {
       p.x += p.vx;
@@ -203,17 +228,29 @@ function initParticles() {
 
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-      ctx.fillStyle = `hsla(${p.hue}, 70%, 65%, ${p.alpha})`;
+      ctx.fillStyle = p.color;
       ctx.fill();
     });
 
-    requestAnimationFrame(draw);
+    rafId = requestAnimationFrame(draw);
   }
+
+  // リサイズイベントをdebounce（連続リサイズ中の過剰処理を防止）
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => { resize(); createParticles(); }, 150);
+  });
 
   resize();
   createParticles();
-  draw();
-  window.addEventListener('resize', () => { resize(); createParticles(); });
+  rafId = requestAnimationFrame(draw);
+
+  // 外部から停止・再開できるコントローラーを返す
+  return {
+    stop:    () => { if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; } },
+    restart: () => { if (rafId === null) rafId = requestAnimationFrame(draw); },
+  };
 }
 
 // ── Setup wizard ──────────────────────────────────────────────────────────────
@@ -665,7 +702,7 @@ function showDicePopup(result) {
 // ── Rollback ──────────────────────────────────────────────────────────────────
 $('btn-rollback').addEventListener('click', async () => {
   if (state.streaming) { showToast('ストリーミング中は使用できません'); return; }
-  if (!confirm('最後のターンを巻き戻しますか？')) return;
+  if (!await showConfirm('最後のターンを巻き戻しますか？', { ok: '巻き戻す' })) return;
   hideActionChoices();
 
   try {
@@ -800,7 +837,7 @@ async function refreshSavesList() {
 
   list.querySelectorAll('.btn-load').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm(`「${btn.dataset.name}」をロードしますか？`)) return;
+      if (!await showConfirm(`「${btn.dataset.name}」をロードしますか？`, { ok: 'ロードする' })) return;
       try {
         await api.loadSave(state.sessionId, btn.dataset.name);
         state.session = await api.getSession(state.sessionId);
@@ -816,7 +853,7 @@ async function refreshSavesList() {
 
   list.querySelectorAll('.btn-delete').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      if (!confirm(`「${btn.dataset.name}」を削除しますか？`)) return;
+      if (!await showConfirm(`「${btn.dataset.name}」を削除しますか？`, { ok: '削除する', danger: true })) return;
       await api.deleteSave(state.sessionId, btn.dataset.name);
       await refreshSavesList();
     });
@@ -880,7 +917,7 @@ function rehydrateStoryFromHistory(showNotification = true) {
 
 // ── End session ───────────────────────────────────────────────────────────────
 $('btn-end').addEventListener('click', async () => {
-  if (!confirm('セッションを終了しますか？')) return;
+  if (!await showConfirm('セッションを終了しますか？', { ok: '終了する', danger: true })) return;
   await api.deleteSession(state.sessionId);
   // セッション終了時はlocalStorageをクリア
   localStorage.removeItem('currentSessionId');
@@ -908,6 +945,39 @@ document.querySelectorAll('.modal-overlay').forEach((overlay) => {
     if (e.target === overlay) closeModal(overlay.id);
   });
 });
+
+// ── Confirm dialog ────────────────────────────────────────────────────────────
+/**
+ * ネイティブ confirm() の代替。スタイル付きモーダルでユーザーに確認を求める。
+ * @param {string} message
+ * @param {{ ok?: string, cancel?: string, danger?: boolean }} options
+ * @returns {Promise<boolean>}
+ */
+function showConfirm(message, { ok = '実行する', cancel = 'キャンセル', danger = false } = {}) {
+  return new Promise((resolve) => {
+    const overlay   = document.getElementById('modal-confirm');
+    const msgEl     = document.getElementById('confirm-message');
+    const okBtn     = document.getElementById('btn-confirm-ok');
+    const cancelBtn = document.getElementById('btn-confirm-cancel');
+
+    msgEl.textContent    = message;
+    okBtn.textContent    = ok;
+    cancelBtn.textContent = cancel;
+    okBtn.classList.toggle('btn-confirm-danger', danger);
+    overlay.classList.add('open');
+
+    function close(result) {
+      overlay.classList.remove('open');
+      resolve(result);
+    }
+
+    okBtn.addEventListener('click',    () => close(true),  { once: true });
+    cancelBtn.addEventListener('click', () => close(false), { once: true });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) close(false);
+    }, { once: true });
+  });
+}
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 let toastTimer = null;
@@ -975,6 +1045,22 @@ function initReaderPanel() {
     }
   });
 
+  // エフェクト（軽量モード）
+  $('btn-effect-full').addEventListener('click', () => {
+    if (readerSettings.liteMode) {
+      readerSettings.liteMode = false;
+      applyReaderSettings();
+      saveReaderSettings();
+    }
+  });
+  $('btn-effect-lite').addEventListener('click', () => {
+    if (!readerSettings.liteMode) {
+      readerSettings.liteMode = true;
+      applyReaderSettings();
+      saveReaderSettings();
+    }
+  });
+
   // パネル外クリックで閉じる
   document.addEventListener('click', (e) => {
     if (!$('reader-panel').classList.contains('open')) return;
@@ -986,7 +1072,7 @@ function initReaderPanel() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 async function init() {
-  initParticles();
+  particlesCtrl = initParticles();
   // 表示設定を読み込んで反映
   applyReaderSettings();
   // 表示設定パネルのイベントを登録
