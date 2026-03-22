@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI TRPG — 入場認証</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;500&family=Zen+Old+Mincho:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-void:      #050508;
+      --bg-surface:   #0f0f1a;
+      --bg-elevated:  #161625;
+      --border-dim:   rgba(255,255,255,0.06);
+      --border-glow:  rgba(140,100,255,0.3);
+      --text-primary: #e8e0f0;
+      --text-muted:   #5a5770;
+      --accent-purple: #8c64ff;
+      --accent-gold:   #d4af71;
+      --font-serif: 'Zen Old Mincho', 'Noto Serif JP', serif;
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg-void);
+      color: var(--text-primary);
+      font-family: var(--font-serif);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    /* 背景グラデーション */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        radial-gradient(ellipse 60% 50% at 30% 40%, rgba(80,50,180,0.12) 0%, transparent 70%),
+        radial-gradient(ellipse 50% 60% at 70% 60%, rgba(60,30,120,0.10) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .login-box {
+      position: relative;
+      width: min(380px, 90vw);
+      background: var(--bg-surface);
+      border: 1px solid var(--border-dim);
+      border-radius: 20px;
+      padding: 48px 40px;
+      text-align: center;
+      box-shadow: 0 0 60px rgba(140,100,255,0.08), 0 2px 40px rgba(0,0,0,0.5);
+    }
+
+    .logo {
+      margin-bottom: 32px;
+    }
+    .logo-jp {
+      display: block;
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--accent-gold);
+      text-shadow: 0 0 20px rgba(212,175,113,0.4);
+    }
+    .logo-en {
+      display: block;
+      font-size: 0.75rem;
+      letter-spacing: 0.3em;
+      color: var(--text-muted);
+      margin-top: 6px;
+      font-family: 'Noto Serif JP', serif;
+    }
+
+    .login-label {
+      font-size: 0.8rem;
+      letter-spacing: 0.15em;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .input-wrap {
+      position: relative;
+      margin-bottom: 24px;
+    }
+    .input-wrap input {
+      width: 100%;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-dim);
+      border-radius: 10px;
+      padding: 14px 16px;
+      color: var(--text-primary);
+      font-size: 1rem;
+      font-family: var(--font-serif);
+      letter-spacing: 0.1em;
+      outline: none;
+      transition: border-color 200ms ease;
+    }
+    .input-wrap input:focus {
+      border-color: var(--border-glow);
+      box-shadow: 0 0 0 3px rgba(140,100,255,0.1);
+    }
+
+    .btn-enter {
+      width: 100%;
+      background: linear-gradient(135deg, #6b44e0 0%, #8c64ff 100%);
+      border: none;
+      border-radius: 10px;
+      padding: 14px;
+      color: #fff;
+      font-size: 0.95rem;
+      font-family: var(--font-serif);
+      letter-spacing: 0.2em;
+      cursor: pointer;
+      transition: opacity 200ms ease, transform 150ms ease;
+    }
+    .btn-enter:hover:not(:disabled) { opacity: 0.85; }
+    .btn-enter:active:not(:disabled) { transform: scale(0.98); }
+    .btn-enter:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .error-msg {
+      margin-top: 16px;
+      font-size: 0.82rem;
+      color: #ff6b8a;
+      letter-spacing: 0.05em;
+      min-height: 1.2em;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <div class="logo">
+      <span class="logo-jp">電脳叙事詩</span>
+      <span class="logo-en">AI TRPG</span>
+    </div>
+    <p class="login-label">入場にはパスワードが必要です</p>
+    <form id="login-form">
+      <div class="input-wrap">
+        <input type="password" id="password" placeholder="パスワード" autocomplete="current-password" autofocus />
+      </div>
+      <button type="submit" class="btn-enter" id="btn-enter">入　場</button>
+    </form>
+    <p class="error-msg" id="error-msg"></p>
+  </div>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const btn = document.getElementById('btn-enter');
+    const errEl = document.getElementById('error-msg');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const password = document.getElementById('password').value;
+      if (!password) return;
+
+      btn.disabled = true;
+      errEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password }),
+        });
+
+        if (res.ok) {
+          window.location.href = '/';
+        } else {
+          const data = await res.json().catch(() => ({}));
+          errEl.textContent = data.error || 'パスワードが違います';
+          btn.disabled = false;
+        }
+      } catch {
+        errEl.textContent = 'サーバーに接続できません';
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

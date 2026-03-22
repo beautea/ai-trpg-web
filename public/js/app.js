@@ -915,6 +915,17 @@ function rehydrateStoryFromHistory(showNotification = true) {
   if (showNotification) showToast('履歴を復元しました');
 }
 
+// ── Logout ────────────────────────────────────────────────────────────────────
+const btnLogout = $('btn-logout');
+if (window.AUTH_REQUIRED) {
+  btnLogout.style.display = '';
+  btnLogout.addEventListener('click', async () => {
+    if (!await showConfirm('ログアウトしますか？', { ok: 'ログアウト', danger: true })) return;
+    await fetch('/api/auth/logout', { method: 'POST' });
+    window.location.href = '/login';
+  });
+}
+
 // ── End session ───────────────────────────────────────────────────────────────
 $('btn-end').addEventListener('click', async () => {
   if (!await showConfirm('セッションを終了しますか？', { ok: '終了する', danger: true })) return;
