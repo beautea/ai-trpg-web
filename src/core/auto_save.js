@@ -45,6 +45,9 @@ export async function loadAutoSave(sessionId) {
   }
 }
 
+/** UUID v4 形式の検証（セッションIDとして安全なディレクトリ名のみ復元対象とする） */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 /**
  * サーバー起動時: data/saves/ 配下の全自動セーブをメモリに復元
  */
@@ -55,6 +58,8 @@ export async function loadAllAutoSaves() {
     let count = 0;
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
+      // UUID形式以外のディレクトリは無視（手動作成ディレクトリ等の誤復元防止）
+      if (!UUID_REGEX.test(entry.name)) continue;
       const data = await loadAutoSave(entry.name);
       if (data?.setupComplete && data?.active !== false) {
         restoreSession(entry.name, data);

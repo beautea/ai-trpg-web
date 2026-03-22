@@ -140,13 +140,17 @@ app.use('/api', apiRouter);
 // SPA fallback（HTMLにバージョンクエリを注入して返す）
 // ?v=BUILD_TS を付けることで Cloudflare 等の CDN キャッシュをバイパスする
 const INDEX_PATH = path.join(__dirname, 'public', 'index.html');
+
+// 起動時に一度だけ index.html を読み込んでキャッシュ（リクエストごとの同期 I/O を排除）
+// AUTH_REQUIRED・BUILD_TS はサーバー起動中に変化しないため、完全に事前計算できる
+const INDEX_HTML_CACHED = fs.readFileSync(INDEX_PATH, 'utf8')
+  .replace(/(href|src)="(\/(?:css|js)\/[^"]+)"/g, `$1="$2?v=${BUILD_TS}"`)
+  // 認証フラグをフロントエンドに注入（ログアウトボタン表示制御用）
+  .replace('</head>', `<script>window.AUTH_REQUIRED=${AUTH_REQUIRED};</script>\n</head>`);
+
 app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
-  const html = fs.readFileSync(INDEX_PATH, 'utf8')
-    .replace(/(href|src)="(\/(?:css|js)\/[^"]+)"/g, `$1="$2?v=${BUILD_TS}"`)
-    // 認証フラグをフロントエンドに注入（ログアウトボタン表示制御用）
-    .replace('</head>', `<script>window.AUTH_REQUIRED=${AUTH_REQUIRED};</script>\n</head>`);
-  res.send(html);
+  res.send(INDEX_HTML_CACHED);
 });
 
 // ── 起動シーケンス ─────────────────────────────────────────────────────────────

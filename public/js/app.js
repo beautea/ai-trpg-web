@@ -3,6 +3,16 @@
  */
 import * as api from './api.js';
 
+/** HTML特殊文字をエスケープ（XSS防止） */
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
   sessionId: null,
@@ -236,20 +246,26 @@ function initParticles() {
   }
 
   // リサイズイベントをdebounce（連続リサイズ中の過剰処理を防止）
+  // 名前付き関数で参照を保持し、destroy 時に確実に解除できるようにする
   let resizeTimer = null;
-  window.addEventListener('resize', () => {
+  const onResize = () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => { resize(); createParticles(); }, 150);
-  });
+  };
+  window.addEventListener('resize', onResize);
 
   resize();
   createParticles();
   rafId = requestAnimationFrame(draw);
 
-  // 外部から停止・再開できるコントローラーを返す
+  // 外部から停止・再開・破棄できるコントローラーを返す
   return {
     stop:    () => { if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; } },
     restart: () => { if (rafId === null) rafId = requestAnimationFrame(draw); },
+    destroy: () => {
+      if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; }
+      window.removeEventListener('resize', onResize);
+    },
   };
 }
 
@@ -689,12 +705,20 @@ function showDicePopup(result) {
   // Remove existing popup
   document.querySelector('.dice-popup')?.remove();
 
+  // innerHTML を使わず DOM 構築（XSS防止）
   const popup = document.createElement('div');
   popup.className = 'dice-popup';
-  popup.innerHTML = `
-    <div class="dice-popup-result">${result.result}</div>
-    <div class="dice-popup-desc">${result.description}</div>
-  `;
+
+  const resultEl = document.createElement('div');
+  resultEl.className = 'dice-popup-result';
+  resultEl.textContent = result.result;
+
+  const descEl = document.createElement('div');
+  descEl.className = 'dice-popup-desc';
+  descEl.textContent = result.description;
+
+  popup.appendChild(resultEl);
+  popup.appendChild(descEl);
   document.body.appendChild(popup);
   setTimeout(() => popup.remove(), 3000);
 }
@@ -706,32 +730,29 @@ $('btn-rollback').addEventListener('click', async () => {
   hideActionChoices();
 
   try {
-    const res = await api.rollback(state.sessionId);
-    if (res.ok) {
-      // Remove last two entries (player + gm) and their dividers
-      const inner = $('story-inner');
-      const isHorizontal = readerSettings.writingMode === 'horizontal';
-      // 縦書き: 最新エントリはfirstChild、横書き: 最新エントリはlastChild
-      const getNewest = () => isHorizontal ? inner.lastChild : inner.firstChild;
-      let removed = 0;
-      while (removed < 2 && getNewest()) {
-        const child = getNewest();
-        inner.removeChild(child);
-        if (child.classList && (child.classList.contains('story-entry') || child.classList.contains('story-divider'))) {
-          if (child.classList.contains('story-entry')) removed++;
-        }
+    await api.rollback(state.sessionId);
+    // Remove last two entries (player + gm) and their dividers
+    const inner = $('story-inner');
+    const isHorizontal = readerSettings.writingMode === 'horizontal';
+    // 縦書き: 最新エントリはfirstChild、横書き: 最新エントリはlastChild
+    const getNewest = () => isHorizontal ? inner.lastChild : inner.firstChild;
+    let removed = 0;
+    while (removed < 2 && getNewest()) {
+      const child = getNewest();
+      inner.removeChild(child);
+      if (child.classList && (child.classList.contains('story-entry') || child.classList.contains('story-divider'))) {
+        if (child.classList.contains('story-entry')) removed++;
       }
-      // Also remove dangling divider at the newest end
-      const edge = getNewest();
-      if (edge?.classList?.contains('story-divider')) {
-        inner.removeChild(edge);
-      }
-      showToast('ターンを巻き戻しました');
-    } else {
-      showToast(res.error || '巻き戻せません');
     }
+    // Also remove dangling divider at the newest end
+    const edge = getNewest();
+    if (edge?.classList?.contains('story-divider')) {
+      inner.removeChild(edge);
+    }
+    showToast('ターンを巻き戻しました');
   } catch (err) {
-    showToast('巻き戻しに失敗しました');
+    // サーバーから返るエラーメッセージ（「巻き戻せる履歴がありません」等）を表示
+    showToast(err.message || '巻き戻しに失敗しました');
   }
 });
 
@@ -743,10 +764,11 @@ function renderStatus() {
   if (!session) return;
 
   const { player, rules, turn } = session;
+  // ユーザー入力値は escapeHtml でサニタイズ（XSS防止）
   let html = `<div class="status-grid">
     <div class="status-item">
       <span class="status-item-label">キャラクター</span>
-      <span class="status-item-value">${player?.name || '—'}</span>
+      <span class="status-item-value">${escapeHtml(player?.name || '—')}</span>
     </div>
     <div class="status-item">
       <span class="status-item-label">ターン</span>
@@ -777,7 +799,7 @@ function renderStatus() {
 
   html += `<div class="status-item">
     <span class="status-item-label">ジャンル</span>
-    <span class="status-item-value" style="font-size:0.9rem">${rules?.genre || '—'}</span>
+    <span class="status-item-value" style="font-size:0.9rem">${escapeHtml(rules?.genre || '—')}</span>
   </div>
   <div class="status-item">
     <span class="status-item-label">スタイル</span>
@@ -819,18 +841,21 @@ async function refreshSavesList() {
     return;
   }
 
+  // s.name はユーザー入力由来のため escapeHtml でサニタイズ（XSS・属性インジェクション防止）
+  // data-name 属性のエスケープはブラウザが自動でデコードするため API 呼び出し時は元の値が復元される
   list.innerHTML = saves.map((s) => {
     const date = new Date(s.savedAt).toLocaleString('ja-JP', {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
     });
+    const safeName = escapeHtml(s.name);
     return `<div class="save-item">
       <div class="save-item-info">
-        <span class="save-item-name">${s.name}</span>
+        <span class="save-item-name">${safeName}</span>
         <span class="save-item-meta">${date} · ターン ${s.turn}</span>
       </div>
       <div class="save-item-actions">
-        <button class="btn-load" data-name="${s.name}">ロード</button>
-        <button class="btn-delete" data-name="${s.name}">削除</button>
+        <button class="btn-load" data-name="${safeName}">ロード</button>
+        <button class="btn-delete" data-name="${safeName}">削除</button>
       </div>
     </div>`;
   }).join('');
@@ -854,8 +879,12 @@ async function refreshSavesList() {
   list.querySelectorAll('.btn-delete').forEach((btn) => {
     btn.addEventListener('click', async () => {
       if (!await showConfirm(`「${btn.dataset.name}」を削除しますか？`, { ok: '削除する', danger: true })) return;
-      await api.deleteSave(state.sessionId, btn.dataset.name);
-      await refreshSavesList();
+      try {
+        await api.deleteSave(state.sessionId, btn.dataset.name);
+        await refreshSavesList();
+      } catch {
+        showToast('削除に失敗しました');
+      }
     });
   });
 }
@@ -929,7 +958,11 @@ if (window.AUTH_REQUIRED) {
 // ── End session ───────────────────────────────────────────────────────────────
 $('btn-end').addEventListener('click', async () => {
   if (!await showConfirm('セッションを終了しますか？', { ok: '終了する', danger: true })) return;
-  await api.deleteSession(state.sessionId);
+  try {
+    await api.deleteSession(state.sessionId);
+  } catch {
+    // サーバー側削除が失敗してもローカルをクリアして画面遷移（ユーザー操作を妨げない）
+  }
   // セッション終了時はlocalStorageをクリア
   localStorage.removeItem('currentSessionId');
   state.sessionId = null;

@@ -152,6 +152,8 @@ server.js（Expressアプリ）
 ### LLMClient はエラーを投げない
 `llm_client.chat()` / `chatStream()` はすべての例外を捕捉し、`⚠️` 始まりの文字列として返す。呼び出し側でエラー判定が必要な場合は返り値の先頭文字で判断する。
 
+`llm_client.js` のモジュールロード時に `ANTHROPIC_API_KEY` の存在を確認し、未設定の場合は即座に `process.exit(1)` する（最初のリクエストまでエラーが遅延するのを防ぐ）。
+
 ### ストリーミングはSSEで実装
 `res.setHeader('Content-Type', 'text/event-stream')` でSSE接続を確立し、`res.write()` でチャンクを送信する。`chatStream(system, messages, onChunk)` の `onChunk` コールバックでチャンクを受け取る。
 
@@ -164,13 +166,13 @@ GMの応答テキストから `【HP】現在: X / 最大: Y` 形式を正規表
 加えて、`rag_system.retrieveSystemRules()` で `src/system_rules.js` に定義された永続ルールを取得し、`formatSystemRulesForPrompt()` でプロンプト文字列に整形して各アクション・イントロ生成時に注入する。`server.js` 起動時に `initFormattingRules()` を呼び出して初期化する。
 
 ### 自動セーブ
-`processActionStream()` と `generateIntroStream()` の完了後、`auto_save.autoSave()` を非同期で呼び出す。起動時は `loadAllAutoSaves()` で `data/saves/` 配下の自動セーブを全セッション分メモリに復元する。
+`processActionStream()` と `generateIntroStream()` の完了後、`auto_save.autoSave()` を非同期で呼び出す。起動時は `loadAllAutoSaves()` で `data/saves/` 配下の自動セーブを全セッション分メモリに復元する。復元対象はUUID v4形式のディレクトリ名のみとし、手動作成ディレクトリ等の誤復元を防ぐ。
 
 ### ChromaDB
 `server.js` 起動時に `chroma` CLIが検出できればローカルプロセスとしてChromaDBサーバーを起動する。未検出の場合はインメモリフォールバックで動作する。`memory_store.initMemoryStore(url)` で接続初期化する。その後 `rag_system.initFormattingRules()` でシステムルールを読み込む。
 
 ### セーブ形式
-`data/saves/{sessionId}/{saveName}.json` + `{saveName}_summary.md` の2ファイル形式。JSONにはセッション全状態を保存し、MDは人間向けサマリー。
+`data/saves/{sessionId}/{saveName}.json` + `{saveName}_summary.md` の2ファイル形式。JSONにはセッション全状態を保存し、MDは人間向けサマリー。`autosave.json` はユーザー向けセーブ一覧（`listSaves()`）から除外される。
 
 ### プロンプトの文字数制限
 GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_builder.buildSystemPrompt()` 内で注入）。
@@ -180,6 +182,24 @@ GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_b
 | `short` | 100〜200文字 |
 | `standard`（デフォルト） | 200〜400文字 |
 | `long` | 400〜700文字 |
+
+### セキュリティ
+
+#### XSS防止（フロントエンド）
+`app.js` の `escapeHtml()` 関数でユーザー入力由来の文字列をサニタイズしてからHTMLに挿入する。特に `renderStatus()`・`refreshSavesList()` 内のキャラクター名・ジャンル・セーブ名はすべてエスケープ必須。`innerHTML` への動的文字列埋め込みは禁止し、代わりに `textContent` への代入またはDOM構築を使う（`showDicePopup()` 参照）。
+
+#### APIエラーハンドリング（フロントエンド）
+`api.js` の `checkResponse()` がHTTPエラー（`res.ok === false`）を検出し `Error` をスローする。すべての `fetch` ラッパーはこれを経由するため、呼び出し元は `try/catch` でエラーを処理する。サーバーが返す `{ error: '...' }` のメッセージが `err.message` として伝播する。
+
+#### 入力バリデーション（サーバー）
+`src/routes/api.js` の全エンドポイントで以下を検証する：
+- **セッションID**: UUID v4形式（`isValidSessionId()`）のみ受け付け、不正値は 400 を返す。
+- **セーブ名**: `sanitizeSaveName()` で英数字・アンダースコア・ハイフン・日本語文字のみ許可（最大40文字）。
+- **PATCHの列挙値**: `diceSystem`・`statsMode`・`narrativeStyle`・`responseLength` は `ALLOWED` セットに含まれる値のみ受け付け、`id`・`active`・`setupComplete` 等のコアフィールドの上書きを防ぐ。
+- **アクション長**: 1000文字超は 400 を返す（コスト爆発・メモリ圧迫防止）。
+
+#### パストラバーサル防止（サーバー）
+`save_manager.js` の全ファイルI/O関数で `path.basename(sessionId)` および `path.basename(saveName)` を使いディレクトリ成分を除去する（多重防御）。
 
 ### フロントエンドの画面遷移
 5つの画面（div）をCSSのopacityとdisplayで切り替える。`showScreen(name)` 経由で遷移し、直接CSSを操作しない。`showScreen()` はランディング画面への遷移時に `particlesCtrl?.restart()`、それ以外の画面への遷移時に `particlesCtrl?.stop()` を呼び出してパーティクルを制御する。
@@ -197,7 +217,7 @@ GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoic
 ネイティブの `window.confirm()` は使用しない。代わりに `showConfirm(message, options)` を使う。`Promise<boolean>` を返すスタイル付きモーダルで、`ok`（ボタンラベル）・`cancel`（キャンセルラベル）・`danger`（`true` で赤ボタン）オプションを受け取る。ロールバック・セーブ削除・ロード・セッション終了の各操作で使用する。HTML 側の対応要素は `#modal-confirm`・`#confirm-message`・`#btn-confirm-ok`・`#btn-confirm-cancel`。
 
 ### 静的ファイルのキャッシュバスティング
-`server.js` 起動時に `BUILD_TS = Date.now()` を生成する。SPA フォールバックで `index.html` を動的に読み込み、`/css/` および `/js/` の URL に `?v=BUILD_TS` を注入して返す。`express.static` は `index: false` で `index.html` の自動配信を無効化し、必ず SPA フォールバック経由で提供する。Cloudflare 等 CDN のエッジキャッシュバイパスのため、全静的ファイルに `Cache-Control: no-cache` を設定する。
+`server.js` 起動時に `BUILD_TS = Date.now()` を生成する。`index.html` は起動時に一度だけ読み込んでキャッシュし（`INDEX_HTML_CACHED`）、`/css/` および `/js/` の URL への `?v=BUILD_TS` 注入と `AUTH_REQUIRED` フラグの埋め込みを事前計算する。SPAフォールバック（`app.get('*')`）はこのキャッシュ済み文字列を返す（リクエストごとの同期I/Oを排除）。`express.static` は `index: false` で `index.html` の自動配信を無効化し、必ず SPA フォールバック経由で提供する。Cloudflare 等 CDN のエッジキャッシュバイパスのため、全静的ファイルに `Cache-Control: no-cache` を設定する。
 
 ### リーダー設定パネル（フロントエンド）
 `readerSettings` は IIFE で `localStorage` から読み込み、不正値はデフォルトにフォールバックする。保持するキーは `fontSizeIdx`・`writingMode`・`fontFamily`・`liteMode`（軽量モード）の4種。`initReaderPanel()` が全ボタンのイベントリスナーを登録し `init()` から呼ぶ。状態変更は `syncReaderUI()` で全トグルボタンの `.active` クラスと CSS 変数を一括同期する（エフェクトボタン `#btn-effect-full`・`#btn-effect-lite` も含む）。`toggleReaderPanel(forceClose)` でパネルの開閉を制御する。
@@ -205,7 +225,7 @@ GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoic
 軽量モード（`liteMode`）切り替え時はパーティクルアニメーションも連動して停止・再開する。`applyReaderSettings()` が CSS カスタムプロパティ・クラス・パーティクル制御をまとめて行う。軽量モードは `html` 要素への `.lite-mode` クラス付与で全体のエフェクトを制御し、ページ読み込み直後に `<script>` タグ（`app.js` より前）で即時適用してチカつきを防ぐ。
 
 ### パーティクルコントローラー
-`initParticles()` は `{ stop, restart }` を持つコントローラーオブジェクトを返す。`init()` でこれを `particlesCtrl` に格納し、`showScreen()` および `applyReaderSettings()` から呼び出す。背景グラジェントは CSS の `radial-gradient` に移管済みのため、canvas は描画クリアのみ行う。パーティクルの色は初期化時に文字列で事前計算し毎フレームのテンプレートリテラル生成を回避する。リサイズイベントは150msのデバウンスを挟む。
+`initParticles()` は `{ stop, restart, destroy }` を持つコントローラーオブジェクトを返す。`init()` でこれを `particlesCtrl` に格納し、`showScreen()` および `applyReaderSettings()` から呼び出す。`destroy()` はアニメーションを停止しリサイズリスナーも解除する（メモリリーク防止）。背景グラジェントは CSS の `radial-gradient` に移管済みのため、canvas は描画クリアのみ行う。パーティクルの色は初期化時に文字列で事前計算し毎フレームのテンプレートリテラル生成を回避する。リサイズイベントは150msのデバウンスを挟む。
 
 ### ストーリー表示の書字方向とスクロール
 `writing-mode: vertical-rl` は `.story-entry` 要素に設定し、フレックスコンテナ `.story-inner` には設定しない（コンテナに設定するとフレックスの主軸が縦方向に変わり上方向スクロールになるため）。

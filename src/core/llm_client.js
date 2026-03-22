@@ -1,6 +1,12 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config.js';
 
+// 起動時に API キーの存在を確認（未設定のまま起動して最初のリクエストで失敗するのを防ぐ）
+if (!process.env.ANTHROPIC_API_KEY) {
+  console.error('エラー: ANTHROPIC_API_KEY が設定されていません。.env ファイルを確認してください。');
+  process.exit(1);
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });

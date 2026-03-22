@@ -50,6 +50,8 @@ node server.js
 
 ブラウザで `http://localhost:3000` を開く。
 
+> **注意**: `ANTHROPIC_API_KEY` が未設定の場合、サーバーは起動時に即座に終了します。
+
 ---
 
 ## 起動スクリプト（PM2管理）
@@ -104,7 +106,7 @@ ai-trpg-web/
 
 | 変数名 | 必須 | 説明 |
 |--------|------|------|
-| `ANTHROPIC_API_KEY` | ✅ | Anthropic APIキー |
+| `ANTHROPIC_API_KEY` | ✅ | Anthropic APIキー（未設定時は起動時に終了） |
 | `PORT` | — | サーバーポート（デフォルト: 3000） |
 | `CHROMA_URL` | — | ChromaDB URL（デフォルト: `http://localhost:8001`） |
 | `SESSION_SECRET` | — | 将来の拡張用（現在未使用） |
