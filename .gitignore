@@ -22,3 +22,6 @@ Thumbs.db
 # スクリプト
 commit.sh
 update-docs.sh
+
+#claude
+.claude/
