@@ -34,8 +34,15 @@ case "${1:-start}" in
       exit 1
     fi
 
-    # PM2 で起動
-    pm2 start "$SCRIPT_DIR/server.js" --name "$APP_NAME"
+    # TypeScript ビルド（バックエンド + フロントエンド）
+    npm --prefix "$SCRIPT_DIR" run build
+
+    # 既存プロセスがあれば再起動、なければ新規起動
+    if pm2 describe "$APP_NAME" &>/dev/null; then
+      pm2 restart "$APP_NAME"
+    else
+      pm2 start "$SCRIPT_DIR/dist/server.js" --name "$APP_NAME"
+    fi
     pm2 save
 
     # ポート取得（設定されていれば）
@@ -60,7 +67,8 @@ case "${1:-start}" in
     ;;
 
   restart)
-    echo "🔄 サーバーを再起動します..."
+    echo "🔄 サーバーを再起動します（ビルド込み）..."
+    npm --prefix "$SCRIPT_DIR" run build
     pm2 restart "$APP_NAME"
     echo "✅ 再起動完了"
     pm2 status

@@ -6,7 +6,13 @@
  * id は一意な文字列（変更すると新規エントリとして追加されるため注意）。
  */
 
-export const SYSTEM_RULES = [
+export interface SystemRule {
+  id: string;
+  category: string;
+  text: string;
+}
+
+export const SYSTEM_RULES: SystemRule[] = [
   // ── フォーマット ──────────────────────────────────────────────────────────
   {
     id: 'fmt_linebreak',

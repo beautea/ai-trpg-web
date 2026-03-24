@@ -7,11 +7,12 @@
 import { addMemory, queryMemories, addSystemRule, getAllSystemRules } from './memory_store.js';
 import { chat } from './llm_client.js';
 import { SYSTEM_RULES } from '../system_rules.js';
+import type { MemoryEntry } from '../types.js';
 
 /**
  * サーバー起動時にsystem_rules.jsの内容をChromaDBへ永続化（idempotent）
  */
-export async function initFormattingRules() {
+export async function initFormattingRules(): Promise<void> {
   for (const rule of SYSTEM_RULES) {
     await addSystemRule(rule.id, rule.text, { category: rule.category });
   }
@@ -20,18 +21,15 @@ export async function initFormattingRules() {
 
 /**
  * 全システムルールをChromaDBから取得
- * @returns {Promise<Array<{document:string, metadata:object}>>}
  */
-export async function retrieveSystemRules() {
+export async function retrieveSystemRules(): Promise<MemoryEntry[]> {
   return getAllSystemRules();
 }
 
 /**
  * システムルールをシステムプロンプト用テキストにフォーマット
- * @param {Array<{document:string}>} rules
- * @returns {string}
  */
-export function formatSystemRulesForPrompt(rules) {
+export function formatSystemRulesForPrompt(rules: MemoryEntry[]): string {
   if (!rules || rules.length === 0) return '';
   const lines = rules
     .filter((r) => r.document?.trim())
@@ -45,13 +43,23 @@ export function formatSystemRulesForPrompt(rules) {
  * ターン終了後にLLMで重要事実を抽出してメモリに格納（非同期・fire-and-forget）
  * GMの応答をブロックしないよう非同期実行する
  */
-export function extractAndStoreMemoryAsync(sessionId, turn, playerInput, gmResponse) {
-  _extractAndStore(sessionId, turn, playerInput, gmResponse).catch((err) => {
+export function extractAndStoreMemoryAsync(
+  sessionId: string,
+  turn: number,
+  playerInput: string,
+  gmResponse: string,
+): void {
+  _extractAndStore(sessionId, turn, playerInput, gmResponse).catch((err: Error) => {
     console.error('メモリ抽出エラー:', err.message);
   });
 }
 
-async function _extractAndStore(sessionId, turn, playerInput, gmResponse) {
+async function _extractAndStore(
+  sessionId: string,
+  turn: number,
+  playerInput: string,
+  gmResponse: string,
+): Promise<void> {
   const prompt = `以下のTRPGシーンから、将来のGMが覚えておくべき重要な事実を1〜3個抽出してください。
 キャラクター名・場所・重要な出来事・アイテム取得・関係性の変化・重大な決断などが対象です。
 各事実は「・」で始まる1行で、具体的かつ簡潔に書いてください。
@@ -80,20 +88,18 @@ GM応答: ${gmResponse}`;
 
 /**
  * 現在のコンテキストに関連するメモリを検索
- * @param {string} sessionId
- * @param {string} currentContext - 現在のプレイヤー行動テキスト
- * @returns {Promise<Array<{document:string, metadata:object, distance:number}>>}
  */
-export async function retrieveRelevantMemories(sessionId, currentContext) {
+export async function retrieveRelevantMemories(
+  sessionId: string,
+  currentContext: string,
+): Promise<MemoryEntry[]> {
   return queryMemories(sessionId, currentContext, 6);
 }
 
 /**
  * 検索済みメモリをシステムプロンプト用テキストにフォーマット
- * @param {Array<{document:string}>} memories
- * @returns {string} システムプロンプトに追加するテキスト
  */
-export function formatMemoriesForPrompt(memories) {
+export function formatMemoriesForPrompt(memories: MemoryEntry[]): string {
   if (!memories || memories.length === 0) return '';
 
   const lines = memories

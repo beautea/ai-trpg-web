@@ -18,11 +18,15 @@ import {
   formatSystemRulesForPrompt,
 } from './rag_system.js';
 import { autoSave } from './auto_save.js';
+import type { Session } from '../types.js';
 
 /**
  * イントロシーン生成（ストリーミング）
  */
-export async function generateIntroStream(sessionId, onChunk) {
+export async function generateIntroStream(
+  sessionId: string,
+  onChunk: (chunk: string) => void,
+): Promise<string> {
   const session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
@@ -50,7 +54,7 @@ export async function generateIntroStream(sessionId, onChunk) {
 /**
  * イントロシーン生成（非ストリーミング）
  */
-export async function generateIntro(sessionId) {
+export async function generateIntro(sessionId: string): Promise<string> {
   const session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
@@ -68,7 +72,11 @@ export async function generateIntro(sessionId) {
  * プレイヤー行動を処理してGM応答をストリーミング
  * 関連メモリをRAGで検索してシステムプロンプトに注入する
  */
-export async function processActionStream(sessionId, playerInput, onChunk) {
+export async function processActionStream(
+  sessionId: string,
+  playerInput: string,
+  onChunk: (chunk: string) => void,
+): Promise<string> {
   const session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
@@ -83,7 +91,7 @@ export async function processActionStream(sessionId, playerInput, onChunk) {
   const memoriesText = formatSystemRulesForPrompt(systemRules) + formatMemoriesForPrompt(memories);
 
   const systemPrompt = buildSystemPrompt(session, memoriesText);
-  const messages = session.history.map((h) => ({ role: h.role, content: h.content }));
+  const messages = session.history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content }));
 
   const fullText = await chatStream(systemPrompt, messages, onChunk);
 
@@ -108,7 +116,7 @@ export async function processActionStream(sessionId, playerInput, onChunk) {
 /**
  * プレイヤー行動を処理（非ストリーミング）
  */
-export async function processAction(sessionId, playerInput) {
+export async function processAction(sessionId: string, playerInput: string): Promise<string> {
   const session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
@@ -120,7 +128,7 @@ export async function processAction(sessionId, playerInput) {
   ]);
   const memoriesText = formatSystemRulesForPrompt(systemRules) + formatMemoriesForPrompt(memories);
   const systemPrompt = buildSystemPrompt(session, memoriesText);
-  const messages = session.history.map((h) => ({ role: h.role, content: h.content }));
+  const messages = session.history.map((h) => ({ role: h.role as 'user' | 'assistant', content: h.content }));
 
   const response = await chat(systemPrompt, messages);
   addHistory(sessionId, 'assistant', response);
@@ -132,14 +140,14 @@ export async function processAction(sessionId, playerInput) {
 /**
  * 直前ターンをロールバック
  */
-export function rollback(sessionId) {
+export function rollback(sessionId: string): boolean {
   return rollbackHistory(sessionId);
 }
 
 /**
  * セーブ用セッションサマリーを生成
  */
-export async function generateSummary(sessionId) {
+export async function generateSummary(sessionId: string): Promise<string> {
   const session = getSession(sessionId);
   if (!session || session.history.length === 0) return '（まだ物語は始まっていない）';
 
@@ -170,7 +178,7 @@ ${historyText}
 /**
  * カスタムテーマ用ワールドコアコンセプトを生成
  */
-export async function generateWorldConcept(sessionId) {
+export async function generateWorldConcept(sessionId: string): Promise<string> {
   const session = getSession(sessionId);
   if (!session) throw new Error('Session not found');
 
@@ -187,7 +195,7 @@ export async function generateWorldConcept(sessionId) {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function parseAndUpdateStats(sessionId, text) {
+function parseAndUpdateStats(sessionId: string, text: string): void {
   const session = getSession(sessionId);
   if (!session || session.rules.statsMode === 'none') return;
 

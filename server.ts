@@ -1,10 +1,9 @@
 import 'dotenv/config';
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
-import { fileURLToPath } from 'url';
-import { spawn, execSync } from 'child_process';
+import { spawn, execSync, ChildProcess } from 'child_process';
 import { config } from './src/config.js';
 import apiRouter from './src/routes/api.js';
 import { initMemoryStore } from './src/core/memory_store.js';
@@ -21,7 +20,7 @@ const AUTH_REQUIRED = !!SESSION_SECRET;
 const AUTH_TOKEN = crypto.randomBytes(32).toString('hex');
 
 /** リクエストから指定名の cookie を取得 */
-function getCookie(req, name) {
+function getCookie(req: Request, name: string): string | null {
   const header = req.headers.cookie || '';
   for (const part of header.split(';')) {
     const eqIdx = part.indexOf('=');
@@ -34,7 +33,7 @@ function getCookie(req, name) {
 }
 
 /** 認証ミドルウェア */
-function requireAuth(req, res, next) {
+function requireAuth(req: Request, res: Response, next: NextFunction): void {
   if (!AUTH_REQUIRED) return next();
   // ログイン画面・認証API は認証不要
   if (req.path === '/login' || req.path.startsWith('/api/auth/')) return next();
@@ -45,7 +44,8 @@ function requireAuth(req, res, next) {
   if (token === AUTH_TOKEN) return next();
 
   if (req.path.startsWith('/api/')) {
-    return res.status(401).json({ error: '認証が必要です' });
+    res.status(401).json({ error: '認証が必要です' });
+    return;
   }
   res.redirect('/login');
 }
@@ -53,19 +53,18 @@ function requireAuth(req, res, next) {
 // 起動時タイムスタンプ（キャッシュバスティング用）
 const BUILD_TS = Date.now();
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// process.cwd() でプロジェクトルートを取得（dev/prod 両方で正しく解決）
+const ROOT = process.cwd();
 
 // ── ChromaDB サーバー起動 ──────────────────────────────────────────────────────
 
-let chromaProcess = null;
+let chromaProcess: ChildProcess | null = null;
 
-async function startChromaServer() {
+async function startChromaServer(): Promise<boolean> {
   try {
     execSync('chroma --version', { stdio: 'pipe' });
 
-    import('fs').then(({ default: fs }) => {
-      fs.mkdirSync(config.chroma.dataDir, { recursive: true });
-    });
+    fs.mkdirSync(config.chroma.dataDir, { recursive: true });
 
     chromaProcess = spawn(
       'chroma',
@@ -73,10 +72,10 @@ async function startChromaServer() {
       { stdio: 'pipe' },
     );
 
-    chromaProcess.stderr?.on('data', (d) => {
+    chromaProcess.stderr?.on('data', (d: Buffer) => {
       if (process.env.DEBUG) process.stderr.write(`[ChromaDB] ${d}`);
     });
-    chromaProcess.on('error', (err) => console.log('ChromaDB起動エラー:', err.message));
+    chromaProcess.on('error', (err: Error) => console.log('ChromaDB起動エラー:', err.message));
 
     // 起動待ち（最大5秒）
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -97,25 +96,26 @@ app.use(express.json());
 // ── 認証ルート（静的ミドルウェアより前に配置） ──────────────────────────────────
 
 // ログイン画面
-app.get('/login', (_req, res) => {
+app.get('/login', (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-cache');
-  res.sendFile(path.join(__dirname, 'public', 'login.html'));
+  res.sendFile(path.join(ROOT, 'public', 'login.html'));
 });
 
 // POST /api/auth/login — パスワード検証・cookie 発行
-app.post('/api/auth/login', (req, res) => {
-  const { password } = req.body;
-  if (!AUTH_REQUIRED) return res.json({ ok: true });
+app.post('/api/auth/login', (req: Request, res: Response) => {
+  const { password } = req.body as { password?: string };
+  if (!AUTH_REQUIRED) { res.json({ ok: true }); return; }
   if (password === SESSION_SECRET) {
     // HttpOnly + SameSite=Strict で XSS・CSRF から保護
     res.setHeader('Set-Cookie', `auth_token=${AUTH_TOKEN}; HttpOnly; SameSite=Strict; Path=/`);
-    return res.json({ ok: true });
+    res.json({ ok: true });
+    return;
   }
   res.status(401).json({ error: 'パスワードが違います' });
 });
 
 // POST /api/auth/logout — cookie 削除
-app.post('/api/auth/logout', (_req, res) => {
+app.post('/api/auth/logout', (_req: Request, res: Response) => {
   res.setHeader('Set-Cookie', 'auth_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
   res.json({ ok: true });
 });
@@ -125,11 +125,11 @@ app.use(requireAuth);
 
 // 静的ファイル配信（index.htmlはSPAフォールバックで注入するためindex:false）
 app.use(
-  express.static(path.join(__dirname, 'public'), {
+  express.static(path.join(ROOT, 'public'), {
     index: false,   // index.html を自動配信しない（バージョン注入のためSPAルートに任せる）
     etag: true,
     lastModified: true,
-    setHeaders(res, _filePath) {
+    setHeaders(res: Response) {
       res.setHeader('Cache-Control', 'no-cache');
     },
   }),
@@ -139,7 +139,7 @@ app.use('/api', apiRouter);
 
 // SPA fallback（HTMLにバージョンクエリを注入して返す）
 // ?v=BUILD_TS を付けることで Cloudflare 等の CDN キャッシュをバイパスする
-const INDEX_PATH = path.join(__dirname, 'public', 'index.html');
+const INDEX_PATH = path.join(ROOT, 'public', 'index.html');
 
 // 起動時に一度だけ index.html を読み込んでキャッシュ（リクエストごとの同期 I/O を排除）
 // AUTH_REQUIRED・BUILD_TS はサーバー起動中に変化しないため、完全に事前計算できる
@@ -148,14 +148,14 @@ const INDEX_HTML_CACHED = fs.readFileSync(INDEX_PATH, 'utf8')
   // 認証フラグをフロントエンドに注入（ログアウトボタン表示制御用）
   .replace('</head>', `<script>window.AUTH_REQUIRED=${AUTH_REQUIRED};</script>\n</head>`);
 
-app.get('*', (_req, res) => {
+app.get('*', (_req: Request, res: Response) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.send(INDEX_HTML_CACHED);
 });
 
 // ── 起動シーケンス ─────────────────────────────────────────────────────────────
 
-async function start() {
+async function start(): Promise<void> {
   // ChromaDB起動 → メモリストア初期化（失敗時はインメモリフォールバック）
   await startChromaServer();
   await initMemoryStore(config.chroma.url);
@@ -173,7 +173,7 @@ start();
 
 // ── プロセス終了時クリーンアップ ──────────────────────────────────────────────
 
-function cleanup() {
+function cleanup(): void {
   if (chromaProcess) {
     chromaProcess.kill();
     chromaProcess = null;

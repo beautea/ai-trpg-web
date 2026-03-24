@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import {
   createSession,
@@ -21,6 +21,7 @@ import {
 } from '../core/save_manager.js';
 import { loadAutoSave } from '../core/auto_save.js';
 import { deleteSessionMemories } from '../core/memory_store.js';
+import type { DiceSystem, StatsMode, NarrativeStyle, ResponseLength } from '../types.js';
 
 const router = Router();
 
@@ -28,7 +29,7 @@ const router = Router();
 
 /** セッションIDのUUID v4形式検証（パストラバーサル防止） */
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-function isValidSessionId(id) {
+function isValidSessionId(id: unknown): id is string {
   return typeof id === 'string' && UUID_REGEX.test(id);
 }
 
@@ -36,7 +37,7 @@ function isValidSessionId(id) {
  * セーブ名のサニタイズ（パストラバーサル防止）
  * 英数字・アンダースコア・ハイフン・日本語文字のみ許可。最大40文字。
  */
-function sanitizeSaveName(name) {
+function sanitizeSaveName(name: unknown): string | null {
   if (typeof name !== 'string' || name.length === 0) return null;
   const cleaned = name.replace(/[^\w\u3041-\u9FFF-]/g, '');
   return cleaned.length > 0 ? cleaned.slice(0, 40) : null;
@@ -44,24 +45,24 @@ function sanitizeSaveName(name) {
 
 /** 許可済み enum セット（不正値のPATCH注入防止） */
 const ALLOWED = {
-  diceSystem:     new Set(['none', 'd20', 'coc', 'dnd5e']),
-  statsMode:      new Set(['none', 'hp', 'hpmp']),
-  narrativeStyle: new Set(['novel', 'trpg', 'balanced']),
-  responseLength: new Set(['short', 'standard', 'long']),
+  diceSystem:     new Set<DiceSystem>(['none', 'd20', 'coc', 'dnd5e']),
+  statsMode:      new Set<StatsMode>(['none', 'hp', 'hpmp']),
+  narrativeStyle: new Set<NarrativeStyle>(['novel', 'trpg', 'balanced']),
+  responseLength: new Set<ResponseLength>(['short', 'standard', 'long']),
 };
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
 /** POST /api/session/new — Create new session */
-router.post('/session/new', (req, res) => {
+router.post('/session/new', (req: Request, res: Response) => {
   const id = uuidv4();
   const session = createSession(id);
   res.json({ sessionId: id, session });
 });
 
 /** GET /api/session/:id — Get session state（メモリにない場合は自動セーブから復元） */
-router.get('/session/:id', async (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.get('/session/:id', async (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
 
   let session = getSession(req.params.id);
 
@@ -74,7 +75,7 @@ router.get('/session/:id', async (req, res) => {
     }
   }
 
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+  if (!session) return res.status(404).json({ error: 'Session not found' }) as unknown as void;
   res.json(session);
 });
 
@@ -83,50 +84,54 @@ router.get('/session/:id', async (req, res) => {
  * 許可フィールド（rules / world / player）のみ受け付け、
  * 既存セッションデータと深くマージする（id・active・setupComplete等の上書き防止）。
  */
-router.patch('/session/:id', (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.patch('/session/:id', (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   const session = getSession(req.params.id);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+  if (!session) return res.status(404).json({ error: 'Session not found' }) as unknown as void;
 
-  const { rules, world, player } = req.body;
-  const updates = {};
+  const { rules, world, player } = req.body as {
+    rules?: Record<string, unknown>;
+    world?: Record<string, unknown>;
+    player?: Record<string, unknown>;
+  };
+  const updates: Record<string, unknown> = {};
 
   if (rules && typeof rules === 'object') {
-    const r = {};
-    if (typeof rules.genre === 'string')         r.genre         = rules.genre.slice(0, 100);
-    if (typeof rules.customSetting === 'string') r.customSetting = rules.customSetting.slice(0, 1000);
-    if (ALLOWED.diceSystem.has(rules.diceSystem))         r.diceSystem     = rules.diceSystem;
-    if (ALLOWED.statsMode.has(rules.statsMode))           r.statsMode      = rules.statsMode;
-    if (ALLOWED.narrativeStyle.has(rules.narrativeStyle)) r.narrativeStyle = rules.narrativeStyle;
-    if (ALLOWED.responseLength.has(rules.responseLength)) r.responseLength = rules.responseLength;
+    const r: Record<string, unknown> = {};
+    if (typeof rules.genre === 'string')         r.genre         = (rules.genre as string).slice(0, 100);
+    if (typeof rules.customSetting === 'string') r.customSetting = (rules.customSetting as string).slice(0, 1000);
+    if (ALLOWED.diceSystem.has(rules.diceSystem as DiceSystem))         r.diceSystem     = rules.diceSystem;
+    if (ALLOWED.statsMode.has(rules.statsMode as StatsMode))           r.statsMode      = rules.statsMode;
+    if (ALLOWED.narrativeStyle.has(rules.narrativeStyle as NarrativeStyle)) r.narrativeStyle = rules.narrativeStyle;
+    if (ALLOWED.responseLength.has(rules.responseLength as ResponseLength)) r.responseLength = rules.responseLength;
     if (typeof rules.actionSuggestions === 'boolean')     r.actionSuggestions = rules.actionSuggestions;
     updates.rules = { ...session.rules, ...r };
   }
 
   if (world && typeof world === 'object') {
-    const w = {};
-    if (typeof world.adventureTheme === 'string') w.adventureTheme = world.adventureTheme.slice(0, 500);
+    const w: Record<string, unknown> = {};
+    if (typeof world.adventureTheme === 'string') w.adventureTheme = (world.adventureTheme as string).slice(0, 500);
     updates.world = { ...session.world, ...w };
   }
 
   if (player && typeof player === 'object') {
-    const p = {};
-    if (typeof player.name === 'string')                   p.name                   = player.name.slice(0, 50);
-    if (typeof player.characterDescription === 'string')   p.characterDescription   = player.characterDescription.slice(0, 2000);
-    if (player.hp    === null || (typeof player.hp    === 'number' && player.hp    >= 0)) p.hp    = player.hp;
-    if (player.hpMax === null || (typeof player.hpMax === 'number' && player.hpMax >  0)) p.hpMax = player.hpMax;
-    if (player.mp    === null || (typeof player.mp    === 'number' && player.mp    >= 0)) p.mp    = player.mp;
-    if (player.mpMax === null || (typeof player.mpMax === 'number' && player.mpMax >  0)) p.mpMax = player.mpMax;
+    const p: Record<string, unknown> = {};
+    if (typeof player.name === 'string')                   p.name                   = (player.name as string).slice(0, 50);
+    if (typeof player.characterDescription === 'string')   p.characterDescription   = (player.characterDescription as string).slice(0, 2000);
+    if (player.hp    === null || (typeof player.hp    === 'number' && (player.hp    as number) >= 0)) p.hp    = player.hp;
+    if (player.hpMax === null || (typeof player.hpMax === 'number' && (player.hpMax as number) >  0)) p.hpMax = player.hpMax;
+    if (player.mp    === null || (typeof player.mp    === 'number' && (player.mp    as number) >= 0)) p.mp    = player.mp;
+    if (player.mpMax === null || (typeof player.mpMax === 'number' && (player.mpMax as number) >  0)) p.mpMax = player.mpMax;
     updates.player = { ...session.player, ...p };
   }
 
-  const updated = updateSession(req.params.id, updates);
+  const updated = updateSession(req.params.id, updates as Partial<import('../types.js').Session>);
   res.json(updated);
 });
 
 /** DELETE /api/session/:id — End session */
-router.delete('/session/:id', (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.delete('/session/:id', (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   const id = req.params.id;
   deleteSession(id);
   // メモリを非同期で削除（エラーは無視）
@@ -140,10 +145,10 @@ router.delete('/session/:id', (req, res) => {
  * POST /api/game/:id/setup-complete
  * Marks setup complete, optionally generates world concept, then streams intro.
  */
-router.post('/game/:id/setup-complete', async (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.post('/game/:id/setup-complete', async (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   const session = getSession(req.params.id);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+  if (!session) return res.status(404).json({ error: 'Session not found' }) as unknown as void;
 
   updateSession(req.params.id, { setupComplete: true });
 
@@ -154,7 +159,7 @@ router.post('/game/:id/setup-complete', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
-  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+  const send = (data: unknown) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
     // Generate world concept if adventureTheme is set
@@ -169,7 +174,7 @@ router.post('/game/:id/setup-complete', async (req, res) => {
     });
     send({ type: 'done' });
   } catch (err) {
-    send({ type: 'error', message: err.message });
+    send({ type: 'error', message: (err as Error).message });
   }
 
   res.end();
@@ -179,18 +184,18 @@ router.post('/game/:id/setup-complete', async (req, res) => {
  * POST /api/game/:id/action — Player action (SSE streaming)
  * Body: { action: string }
  */
-router.post('/game/:id/action', async (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.post('/game/:id/action', async (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   const session = getSession(req.params.id);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+  if (!session) return res.status(404).json({ error: 'Session not found' }) as unknown as void;
 
-  const { action } = req.body;
+  const { action } = req.body as { action?: string };
   if (!action || !action.trim()) {
-    return res.status(400).json({ error: 'Action is required' });
+    return res.status(400).json({ error: 'Action is required' }) as unknown as void;
   }
   // 入力長の上限（コスト爆発・メモリ圧迫防止）
   if (action.trim().length > 1000) {
-    return res.status(400).json({ error: 'Action is too long (max 1000 characters)' });
+    return res.status(400).json({ error: 'Action is too long (max 1000 characters)' }) as unknown as void;
   }
 
   // SSE headers
@@ -200,7 +205,7 @@ router.post('/game/:id/action', async (req, res) => {
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
-  const send = (data) => res.write(`data: ${JSON.stringify(data)}\n\n`);
+  const send = (data: unknown) => res.write(`data: ${JSON.stringify(data)}\n\n`);
 
   try {
     await processActionStream(req.params.id, action.trim(), (chunk) => {
@@ -211,11 +216,11 @@ router.post('/game/:id/action', async (req, res) => {
     const updated = getSession(req.params.id);
     send({
       type: 'done',
-      turn: updated.turn,
-      player: updated.player,
+      turn: updated?.turn,
+      player: updated?.player,
     });
   } catch (err) {
-    send({ type: 'error', message: err.message });
+    send({ type: 'error', message: (err as Error).message });
   }
 
   res.end();
@@ -224,11 +229,11 @@ router.post('/game/:id/action', async (req, res) => {
 /**
  * POST /api/game/:id/rollback — Undo last turn
  */
-router.post('/game/:id/rollback', (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.post('/game/:id/rollback', (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   const ok = rollback(req.params.id);
   const session = getSession(req.params.id);
-  if (!ok) return res.status(400).json({ error: '巻き戻せる履歴がありません' });
+  if (!ok) return res.status(400).json({ error: '巻き戻せる履歴がありません' }) as unknown as void;
   res.json({ ok: true, turn: session?.turn ?? 0 });
 });
 
@@ -236,11 +241,11 @@ router.post('/game/:id/rollback', (req, res) => {
  * POST /api/game/:id/dice — Roll dice
  * Body: { type: 'd20' | 'coc' | 'dnd5e' | 'd6' | 'custom', sides?: number }
  */
-router.post('/game/:id/dice', (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
-  const { type, sides } = req.body;
-  let result;
-  let description;
+router.post('/game/:id/dice', (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
+  const { type, sides } = req.body as { type?: string; sides?: number };
+  let result: number;
+  let description: string;
 
   switch (type) {
     case 'd20':
@@ -261,7 +266,7 @@ router.post('/game/:id/dice', (req, res) => {
       break;
     }
     case 'custom': {
-      const s = parseInt(sides) || 6;
+      const s = Number(sides) || 6;
       result = rollDie(s);
       description = `d${s} → ${result}`;
       break;
@@ -277,55 +282,55 @@ router.post('/game/:id/dice', (req, res) => {
 // ── Save / Load ────────────────────────────────────────────────────────────────
 
 /** GET /api/saves/:id — List saves */
-router.get('/saves/:id', async (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.get('/saves/:id', async (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   const saves = await listSaves(req.params.id);
   res.json(saves);
 });
 
 /** POST /api/saves/:id — Save current session */
-router.post('/saves/:id', async (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.post('/saves/:id', async (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   try {
-    const rawName = req.body.name;
+    const rawName = (req.body as { name?: string }).name;
     const name = rawName ? sanitizeSaveName(rawName) : undefined;
-    if (rawName && !name) return res.status(400).json({ error: 'Invalid save name' });
-    const result = await saveSession(req.params.id, name);
+    if (rawName && !name) return res.status(400).json({ error: 'Invalid save name' }) as unknown as void;
+    const result = await saveSession(req.params.id, name ?? undefined);
     res.json(result);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
 /** POST /api/saves/:id/load — Load a save */
-router.post('/saves/:id/load', async (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.post('/saves/:id/load', async (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   try {
-    const name = sanitizeSaveName(req.body.name);
-    if (!name) return res.status(400).json({ error: 'Invalid save name' });
+    const name = sanitizeSaveName((req.body as { name?: string }).name);
+    if (!name) return res.status(400).json({ error: 'Invalid save name' }) as unknown as void;
     const data = await loadSave(req.params.id, name);
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
 /** DELETE /api/saves/:id/:name — Delete a save */
-router.delete('/saves/:id/:name', async (req, res) => {
-  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' });
+router.delete('/saves/:id/:name', async (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
   const name = sanitizeSaveName(req.params.name);
-  if (!name) return res.status(400).json({ error: 'Invalid save name' });
+  if (!name) return res.status(400).json({ error: 'Invalid save name' }) as unknown as void;
   try {
     await deleteSave(req.params.id, name);
     res.json({ ok: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: (err as Error).message });
   }
 });
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function rollDie(sides) {
+function rollDie(sides: number): number {
   return Math.floor(Math.random() * sides) + 1;
 }
 

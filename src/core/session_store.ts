@@ -1,10 +1,12 @@
 /**
  * In-memory session store (single player, no Discord)
  */
-const sessions = new Map();
+import type { Session, HistoryEntry } from '../types.js';
 
-export function createSession(id) {
-  const session = {
+const sessions = new Map<string, Session>();
+
+export function createSession(id: string): Session {
+  const session: Session = {
     id,
     createdAt: Date.now(),
     active: true,
@@ -14,11 +16,11 @@ export function createSession(id) {
     rules: {
       genre: '',
       customSetting: '',
-      diceSystem: 'none',   // none | d20 | coc | dnd5e
-      statsMode: 'none',    // none | hp | hpmp
-      narrativeStyle: 'novel', // novel | trpg | balanced
+      diceSystem: 'none',
+      statsMode: 'none',
+      narrativeStyle: 'novel',
       actionSuggestions: false,
-      responseLength: 'standard', // short | standard | long
+      responseLength: 'standard',
     },
     world: {
       adventureTheme: '',
@@ -37,29 +39,29 @@ export function createSession(id) {
     scene: '',
     turn: 0,
 
-    // Conversation history [{role: 'user'|'assistant', content: string}]
+    // Conversation history
     history: [],
   };
   sessions.set(id, session);
   return session;
 }
 
-export function getSession(id) {
+export function getSession(id: string): Session | null {
   return sessions.get(id) || null;
 }
 
-export function updateSession(id, updates) {
+export function updateSession(id: string, updates: Partial<Session>): Session {
   const session = sessions.get(id);
   if (!session) throw new Error(`Session ${id} not found`);
   Object.assign(session, updates);
   return session;
 }
 
-export function deleteSession(id) {
+export function deleteSession(id: string): void {
   sessions.delete(id);
 }
 
-export function addHistory(id, role, content) {
+export function addHistory(id: string, role: 'user' | 'assistant', content: string): void {
   const session = sessions.get(id);
   if (!session) return;
   session.history.push({ role, content });
@@ -70,7 +72,7 @@ export function addHistory(id, role, content) {
   }
 }
 
-export function rollbackHistory(id) {
+export function rollbackHistory(id: string): boolean {
   const session = sessions.get(id);
   if (!session || session.history.length < 2) return false;
   // Remove last user + assistant pair
@@ -79,7 +81,7 @@ export function rollbackHistory(id) {
   return true;
 }
 
-export function restoreSession(id, savedData) {
-  sessions.set(id, { ...savedData, id, active: true });
-  return sessions.get(id);
+export function restoreSession(id: string, savedData: unknown): Session {
+  sessions.set(id, { ...(savedData as Session), id, active: true });
+  return sessions.get(id) as Session;
 }

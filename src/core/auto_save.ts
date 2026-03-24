@@ -7,14 +7,14 @@ import fs from 'fs/promises';
 import path from 'path';
 import { getSession, restoreSession } from './session_store.js';
 import { config } from '../config.js';
+import type { Session } from '../types.js';
 
 const AUTOSAVE_FILE = 'autosave.json';
 
 /**
  * セッションを自動セーブ（data/saves/{id}/autosave.json）
- * @param {string} sessionId
  */
-export async function autoSave(sessionId) {
+export async function autoSave(sessionId: string): Promise<void> {
   const session = getSession(sessionId);
   if (!session) return;
   try {
@@ -26,20 +26,19 @@ export async function autoSave(sessionId) {
       'utf-8',
     );
   } catch (err) {
-    console.error('自動セーブエラー:', err.message);
+    const e = err as Error;
+    console.error('自動セーブエラー:', e.message);
   }
 }
 
 /**
  * 指定セッションの自動セーブデータを読み込む
- * @param {string} sessionId
- * @returns {Promise<object|null>}
  */
-export async function loadAutoSave(sessionId) {
+export async function loadAutoSave(sessionId: string): Promise<Session | null> {
   try {
     const file = path.join(config.paths.saves, sessionId, AUTOSAVE_FILE);
     const raw = await fs.readFile(file, 'utf-8');
-    return JSON.parse(raw);
+    return JSON.parse(raw) as Session;
   } catch {
     return null;
   }
@@ -51,7 +50,7 @@ const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9
 /**
  * サーバー起動時: data/saves/ 配下の全自動セーブをメモリに復元
  */
-export async function loadAllAutoSaves() {
+export async function loadAllAutoSaves(): Promise<void> {
   try {
     await fs.mkdir(config.paths.saves, { recursive: true });
     const entries = await fs.readdir(config.paths.saves, { withFileTypes: true });
@@ -68,6 +67,7 @@ export async function loadAllAutoSaves() {
     }
     if (count > 0) console.log(`✓ ${count}件のセッションを自動復元しました`);
   } catch (err) {
-    console.error('自動復元エラー:', err.message);
+    const e = err as Error;
+    console.error('自動復元エラー:', e.message);
   }
 }

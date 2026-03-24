@@ -23,5 +23,12 @@ Thumbs.db
 commit.sh
 update-docs.sh
 
-#claude
+# ビルド成果物
+dist/
+public/js/dist/
+
+# claude
 .claude/
+.letta
+
+deliverables/

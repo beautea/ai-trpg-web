@@ -42,10 +42,17 @@ npm install
 cp .env.example .env
 # .env を編集して ANTHROPIC_API_KEY を設定
 
-# 起動
-node server.js
-# または
+# 本番ビルド → 起動
+npm run build
+node dist/server.js
+
+# または起動スクリプト経由（ビルド込み）
 ./start.sh
+
+# 開発サーバー（ホットリロード）
+npm run dev
+# フロントエンドのウォッチビルドは別ターミナルで
+npm run watch:frontend
 ```
 
 ブラウザで `http://localhost:3000` を開く。
@@ -57,9 +64,9 @@ node server.js
 ## 起動スクリプト（PM2管理）
 
 ```bash
-./start.sh          # 起動
+./start.sh          # ビルド → 起動
 ./start.sh stop     # 停止
-./start.sh restart  # 再起動
+./start.sh restart  # ビルド → 再起動
 ./start.sh status   # 状態確認
 ./start.sh logs     # ログ表示
 ./start.sh delete   # PM2からプロセスを削除
@@ -71,28 +78,42 @@ node server.js
 
 ```
 ai-trpg-web/
-├── server.js              # Expressアプリ エントリーポイント
+├── server.ts              # Expressアプリ エントリーポイント
+├── tsconfig.json          # バックエンド TypeScript 設定
+├── tsconfig.frontend.json # フロントエンド TypeScript 設定
 ├── src/
-│   ├── config.js          # LLM・サーバー・ChromaDB設定
-│   ├── system_rules.js    # 永続システムルール定義データ
+│   ├── types.ts           # 共通型定義（バックエンド・フロントエンド共用）
+│   ├── config.ts          # LLM・サーバー・ChromaDB設定
+│   ├── system_rules.ts    # 永続システムルール定義データ
 │   ├── routes/
-│   │   └── api.js         # APIエンドポイント
+│   │   └── api.ts         # APIエンドポイント
 │   └── core/
-│       ├── session_store.js   # セッション状態管理（SSoT）
-│       ├── llm_client.js      # Anthropic APIクライアント
-│       ├── gm_system.js       # AIGMオーケストレーター
-│       ├── prompt_builder.js  # プロンプト生成
-│       ├── save_manager.js    # セーブ/ロード
-│       ├── auto_save.js       # 自動セーブ・起動時セッション復元
-│       ├── memory_store.js    # ChromaDBクライアント
-│       └── rag_system.js      # RAG（検索拡張生成）
+│       ├── session_store.ts   # セッション状態管理（SSoT）
+│       ├── llm_client.ts      # Anthropic APIクライアント
+│       ├── gm_system.ts       # AIGMオーケストレーター
+│       ├── prompt_builder.ts  # プロンプト生成
+│       ├── save_manager.ts    # セーブ/ロード
+│       ├── auto_save.ts       # 自動セーブ・起動時セッション復元
+│       ├── memory_store.ts    # ChromaDBクライアント
+│       └── rag_system.ts      # RAG（検索拡張生成）
 ├── public/
 │   ├── index.html         # SPA HTML
 │   ├── js/
-│   │   ├── app.js         # UIロジック
-│   │   └── api.js         # APIクライアント
+│   │   ├── app.ts         # エントリーポイント・初期化処理
+│   │   ├── api.ts         # APIクライアント
+│   │   ├── state.ts       # 共有状態
+│   │   ├── screens.ts     # 画面遷移管理
+│   │   ├── particles.ts   # パーティクルアニメーション
+│   │   ├── reader.ts      # リーダー設定・スクロールヘルパー
+│   │   ├── story.ts       # ストーリー表示・ストリーミング
+│   │   ├── session.ts     # セッションライフサイクル
+│   │   ├── setup.ts       # セットアップウィザードUI
+│   │   ├── game.ts        # ゲーム画面UI
+│   │   ├── utils.ts       # DOMヘルパー・Toast・確認ダイアログ
+│   │   └── dist/          # esbuildバンドル出力（.gitignore対象）
 │   └── css/
 │       └── style.css      # ダークテーマ
+├── dist/                  # バックエンドビルド出力（.gitignore対象）
 ├── data/
 │   ├── chroma/            # ChromaDB永続化データ（.gitignore対象）
 │   └── saves/             # セーブファイル（.gitignore対象）
@@ -109,7 +130,7 @@ ai-trpg-web/
 | `ANTHROPIC_API_KEY` | ✅ | Anthropic APIキー（未設定時は起動時に終了） |
 | `PORT` | — | サーバーポート（デフォルト: 3000） |
 | `CHROMA_URL` | — | ChromaDB URL（デフォルト: `http://localhost:8001`） |
-| `SESSION_SECRET` | — | 将来の拡張用（現在未使用） |
+| `SESSION_SECRET` | — | 設定するとパスワード認証が有効になる（未設定時は認証なし） |
 
 ---
 

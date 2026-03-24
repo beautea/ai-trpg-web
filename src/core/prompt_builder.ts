@@ -1,13 +1,17 @@
 /**
  * GMシステムプロンプトを構築する
- * @param {object} session - セッション状態
- * @param {string} memoriesText - RAGで検索した関連メモリテキスト（省略可）
  */
-export function buildSystemPrompt(session, memoriesText = '') {
+import type { Session, NarrativeStyle, ResponseLength } from '../types.js';
+
+/**
+ * @param session - セッション状態
+ * @param memoriesText - RAGで検索した関連メモリテキスト（省略可）
+ */
+export function buildSystemPrompt(session: Session, memoriesText = ''): string {
   const { rules, world, player } = session;
 
   // Narrative style instructions
-  const styleMap = {
+  const styleMap: Record<NarrativeStyle, string> = {
     novel: `あなたは優れた小説家であり、ゲームマスターです。
 プレイヤーの行動に対して、文学的で没入感のある三人称視点の物語を紡いでください。
 描写は豊かで感情的に深く、登場人物の内面心理や情景の細部を丁寧に描写してください。`,
@@ -19,7 +23,7 @@ export function buildSystemPrompt(session, memoriesText = '') {
   };
 
   // Response length instructions
-  const lengthMap = {
+  const lengthMap: Record<ResponseLength, string> = {
     short: '応答は100〜200文字程度の簡潔なものにしてください。',
     standard: '応答は200〜400文字程度の適度な長さにしてください。',
     long: '応答は400〜700文字程度の豊かな描写を心がけてください。',
@@ -94,7 +98,7 @@ ${lengthMap[rules.responseLength] || lengthMap.standard}
 /**
  * Build intro scene generation prompt
  */
-export function buildIntroPrompt(session) {
+export function buildIntroPrompt(session: Session): string {
   const { rules, world, player } = session;
 
   return `以下の設定でTRPGセッションを開始します。プレイヤーを物語の世界に引き込む、魅力的な導入シーンを書いてください。
@@ -118,7 +122,7 @@ ${rules.customSetting ? `特別設定: ${rules.customSetting}` : ''}
 /**
  * Build world/concept generation prompt for auto-setup
  */
-export function buildWorldGenPrompt(session) {
+export function buildWorldGenPrompt(session: Session): string {
   const { rules, player } = session;
   return `以下の情報からTRPGの世界設定のコアコンセプトを生成してください。
 

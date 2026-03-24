@@ -14,7 +14,10 @@ const anthropic = new Anthropic({
 /**
  * Single-turn chat (returns full string)
  */
-export async function chat(system, messages) {
+export async function chat(
+  system: string,
+  messages: Anthropic.MessageParam[],
+): Promise<string> {
   try {
     const response = await anthropic.messages.create({
       model: config.llm.model,
@@ -23,17 +26,24 @@ export async function chat(system, messages) {
       system,
       messages,
     });
-    return response.content[0].text;
+    const block = response.content[0];
+    if (block.type === 'text') return block.text;
+    return '';
   } catch (err) {
-    console.error('LLM error:', err.message);
-    return `⚠️ エラーが発生しました: ${err.message}`;
+    const e = err as Error;
+    console.error('LLM error:', e.message);
+    return `⚠️ エラーが発生しました: ${e.message}`;
   }
 }
 
 /**
  * Streaming chat — calls onChunk(text) for each delta, returns full text
  */
-export async function chatStream(system, messages, onChunk) {
+export async function chatStream(
+  system: string,
+  messages: Anthropic.MessageParam[],
+  onChunk: (chunk: string) => void,
+): Promise<string> {
   let fullText = '';
   try {
     const stream = await anthropic.messages.create({
@@ -48,7 +58,7 @@ export async function chatStream(system, messages, onChunk) {
     for await (const event of stream) {
       if (
         event.type === 'content_block_delta' &&
-        event.delta?.type === 'text_delta'
+        event.delta.type === 'text_delta'
       ) {
         const chunk = event.delta.text;
         fullText += chunk;
@@ -56,8 +66,9 @@ export async function chatStream(system, messages, onChunk) {
       }
     }
   } catch (err) {
-    console.error('LLM stream error:', err.message);
-    const errMsg = `⚠️ エラーが発生しました: ${err.message}`;
+    const e = err as Error;
+    console.error('LLM stream error:', e.message);
+    const errMsg = `⚠️ エラーが発生しました: ${e.message}`;
     onChunk(errMsg);
     fullText += errMsg;
   }
