@@ -18,6 +18,8 @@ import {
   listSaves,
   loadSave,
   deleteSave,
+  listAllSessions,
+  deleteSessionDirectory,
 } from '../core/save_manager.js';
 import { loadAutoSave } from '../core/auto_save.js';
 import { deleteSessionMemories } from '../core/memory_store.js';
@@ -31,6 +33,14 @@ const router = Router();
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function isValidSessionId(id: unknown): id is string {
   return typeof id === 'string' && UUID_REGEX.test(id);
+}
+
+/** X-Client-ID ヘッダーの検証（英数字・ハイフン・アンダースコア、最大100文字） */
+const CLIENT_ID_REGEX = /^[a-zA-Z0-9_-]{1,100}$/;
+function extractClientId(req: Request): string | undefined {
+  const id = req.headers['x-client-id'];
+  const raw = Array.isArray(id) ? id[0] : id;
+  return raw && CLIENT_ID_REGEX.test(raw) ? raw : undefined;
 }
 
 /**
@@ -51,12 +61,32 @@ const ALLOWED = {
   responseLength: new Set<ResponseLength>(['short', 'standard', 'long']),
 };
 
+// ── Sessions (dashboard) ──────────────────────────────────────────────────────
+
+/** GET /api/sessions — セッション一覧（X-Client-ID で所有者フィルタ） */
+router.get('/sessions', async (req: Request, res: Response) => {
+  const clientId = extractClientId(req);
+  const sessions = await listAllSessions(clientId);
+  res.json(sessions);
+});
+
+/** DELETE /api/sessions/:id — セッションを完全削除（ファイル・メモリ・ChromaDB） */
+router.delete('/sessions/:id', async (req: Request, res: Response) => {
+  if (!isValidSessionId(req.params.id)) return res.status(400).json({ error: 'Invalid session ID' }) as unknown as void;
+  const id = req.params.id;
+  deleteSession(id);
+  deleteSessionMemories(id).catch(() => {});
+  await deleteSessionDirectory(id).catch(() => {});
+  res.json({ ok: true });
+});
+
 // ── Session ───────────────────────────────────────────────────────────────────
 
 /** POST /api/session/new — Create new session */
 router.post('/session/new', (req: Request, res: Response) => {
   const id = uuidv4();
-  const session = createSession(id);
+  const clientId = extractClientId(req);
+  const session = createSession(id, clientId);
   res.json({ sessionId: id, session });
 });
 

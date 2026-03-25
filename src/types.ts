@@ -26,6 +26,7 @@ export interface PlayerStats {
   hpMax: number | null;
   mp: number | null;
   mpMax: number | null;
+  items: string[];
 }
 
 export interface HistoryEntry {
@@ -40,6 +41,7 @@ export interface SessionWorld {
 
 export interface Session {
   id: string;
+  clientId?: string;  // ブラウザフィンガープリントID（セッション所有者の識別）
   createdAt: number;
   active: boolean;
   setupComplete: boolean;
@@ -66,6 +68,17 @@ export interface MemoryEntry {
   document: string;
   metadata: Record<string, string | number | boolean>;
   distance?: number;
+}
+
+// ── セッション一覧型 ──────────────────────────────────────────────────────────
+
+export interface SessionSummary {
+  id: string;
+  playerName: string;
+  genre: string;
+  turn: number;
+  lastPlayedAt: string; // ISO文字列
+  scene: string;
 }
 
 // ── セーブ型 ────────────────────────────────────────────────────────────────

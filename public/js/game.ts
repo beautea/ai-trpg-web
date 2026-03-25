@@ -212,8 +212,21 @@ function renderStatus(): void {
       rules?.narrativeStyle === 'novel' ? '小説' :
       rules?.narrativeStyle === 'trpg'  ? 'TRPG' : 'バランス'
     }</span>
-  </div>
   </div>`;
+
+  // 所持品
+  const items = player?.items ?? [];
+  html += `<div class="status-item" style="grid-column: span 2;">
+    <span class="status-item-label">所持品</span>
+    <div class="inventory-list">`;
+  if (items.length > 0) {
+    for (const item of items) {
+      html += `<span class="inventory-item">${escapeHtml(item)}</span>`;
+    }
+  } else {
+    html += `<span style="color:var(--text-muted);font-size:0.82rem">なし</span>`;
+  }
+  html += `</div></div></div>`;
 
   $('status-content').innerHTML = html;
 }

@@ -5,10 +5,11 @@
 import { particlesCtrl } from './state.js';
 
 export const screens: Record<string, HTMLElement> = {
-  landing: document.getElementById('landing-screen')!,
-  setup:   document.getElementById('setup-screen')!,
-  loading: document.getElementById('loading-screen')!,
-  game:    document.getElementById('game-screen')!,
+  landing:  document.getElementById('landing-screen')!,
+  sessions: document.getElementById('sessions-screen')!,
+  setup:    document.getElementById('setup-screen')!,
+  loading:  document.getElementById('loading-screen')!,
+  game:     document.getElementById('game-screen')!,
 };
 
 export function showScreen(name: string): void {

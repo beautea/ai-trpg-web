@@ -5,9 +5,10 @@ import type { Session, HistoryEntry } from '../types.js';
 
 const sessions = new Map<string, Session>();
 
-export function createSession(id: string): Session {
+export function createSession(id: string, clientId?: string): Session {
   const session: Session = {
     id,
+    clientId,
     createdAt: Date.now(),
     active: true,
 
@@ -33,6 +34,7 @@ export function createSession(id: string): Session {
       hpMax: null,
       mp: null,
       mpMax: null,
+      items: [],
     },
 
     // Game state
@@ -82,6 +84,9 @@ export function rollbackHistory(id: string): boolean {
 }
 
 export function restoreSession(id: string, savedData: unknown): Session {
-  sessions.set(id, { ...(savedData as Session), id, active: true });
+  const data = savedData as Session;
+  // 旧データ互換: items フィールドがない場合は空配列で補完
+  if (!data.player.items) data.player.items = [];
+  sessions.set(id, { ...data, id, active: true });
   return sessions.get(id) as Session;
 }

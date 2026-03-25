@@ -197,19 +197,50 @@ export async function generateWorldConcept(sessionId: string): Promise<string> {
 
 function parseAndUpdateStats(sessionId: string, text: string): void {
   const session = getSession(sessionId);
-  if (!session || session.rules.statsMode === 'none') return;
+  if (!session) return;
 
-  // 【HP】現在: X / 最大: Y
-  const hpMatch = text.match(/【HP】現在[:：]\s*(\d+)\s*[\/／]\s*最大[:：]\s*(\d+)/);
-  if (hpMatch) {
-    const player = { ...session.player, hp: parseInt(hpMatch[1]), hpMax: parseInt(hpMatch[2]) };
-    updateSession(sessionId, { player });
+  let player = { ...session.player };
+  let changed = false;
+
+  if (session.rules.statsMode !== 'none') {
+    // 【HP】現在: X / 最大: Y
+    const hpMatch = text.match(/【HP】現在[:：]\s*(\d+)\s*[\/／]\s*最大[:：]\s*(\d+)/);
+    if (hpMatch) {
+      player = { ...player, hp: parseInt(hpMatch[1]), hpMax: parseInt(hpMatch[2]) };
+      changed = true;
+    }
+
+    // 【MP】現在: X / 最大: Y
+    const mpMatch = text.match(/【MP】現在[:：]\s*(\d+)\s*[\/／]\s*最大[:：]\s*(\d+)/);
+    if (mpMatch && session.rules.statsMode === 'hpmp') {
+      player = { ...player, mp: parseInt(mpMatch[1]), mpMax: parseInt(mpMatch[2]) };
+      changed = true;
+    }
   }
 
-  // 【MP】現在: X / 最大: Y
-  const mpMatch = text.match(/【MP】現在[:：]\s*(\d+)\s*[\/／]\s*最大[:：]\s*(\d+)/);
-  if (mpMatch && session.rules.statsMode === 'hpmp') {
-    const player = { ...session.player, mp: parseInt(mpMatch[1]), mpMax: parseInt(mpMatch[2]) };
-    updateSession(sessionId, { player });
+  // 【アイテム取得】アイテム名
+  const gains = [...text.matchAll(/【アイテム取得】([^\n【】]{1,40})/g)];
+  if (gains.length > 0) {
+    const items = [...(player.items || [])];
+    for (const m of gains) {
+      const item = m[1].trim();
+      if (item && !items.includes(item)) items.push(item);
+    }
+    player = { ...player, items };
+    changed = true;
   }
+
+  // 【アイテム消失】アイテム名
+  const losses = [...text.matchAll(/【アイテム消失】([^\n【】]{1,40})/g)];
+  if (losses.length > 0) {
+    let items = [...(player.items || [])];
+    for (const m of losses) {
+      const item = m[1].trim();
+      items = items.filter((i) => i !== item);
+    }
+    player = { ...player, items };
+    changed = true;
+  }
+
+  if (changed) updateSession(sessionId, { player });
 }

@@ -59,6 +59,12 @@ export function buildSystemPrompt(session: Session, memoriesText = ''): string {
 - 名前: ${player.name || '不明'}
 - 設定: ${player.characterDescription || '特になし'}`;
 
+  // Inventory instructions
+  const inventoryInstructions = `アイテムの管理:
+- アイテム・重要な物を入手したら「【アイテム取得】アイテム名」を応答末尾に記載してください（1行1アイテム）。
+- アイテムを失った・消費・破壊した場合は「【アイテム消失】アイテム名」を記載してください。
+- 現在の所持品: ${player.items && player.items.length > 0 ? player.items.join('、') : 'なし'}`;
+
   const actionSuggest = rules.actionSuggestions
     ? `各応答の末尾に必ず以下の形式で3つの行動の選択肢を提示してください。
 【行動の選択肢】
@@ -77,6 +83,7 @@ ${memoriesText}
 
 ${diceInstructions}
 ${statsInstructions}
+${inventoryInstructions}
 ${actionSuggest}
 
 ${lengthMap[rules.responseLength] || lengthMap.standard}

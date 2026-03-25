@@ -28,6 +28,42 @@
         <path d="M5 12h14M12 5l7 7-7 7"/>
       </svg>
     </button>
+    <button class="btn-sessions" id="btn-sessions">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
+        <polyline points="10 9 9 9 8 9"/>
+      </svg>
+      <span>冒険の記録</span>
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ SESSIONS SCREEN -->
+<div id="sessions-screen" class="screen">
+  <div class="sessions-wrapper">
+    <div class="sessions-header">
+      <h2 class="sessions-title">冒険の記録</h2>
+      <button class="sessions-back-btn" id="btn-sessions-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        <span>戻る</span>
+      </button>
+    </div>
+    <div class="sessions-list" id="sessions-list">
+      <div class="sessions-loading">読み込み中…</div>
+    </div>
+    <div class="sessions-footer">
+      <button class="btn-start-journey btn-sessions-new" id="btn-sessions-new">
+        <span>新しい冒険を始める</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M5 12h14M12 5l7 7-7 7"/>
+        </svg>
+      </button>
+    </div>
   </div>
 </div>
 

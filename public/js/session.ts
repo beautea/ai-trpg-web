@@ -23,6 +23,8 @@ export async function tryResumeSession(sessionId: string): Promise<boolean> {
     }
 
     state.sessionId = sessionId;
+    // 旧データ互換: items フィールドがない場合は空配列で補完
+    if (!session.player.items) session.player.items = [];
     state.session = session;
 
     // setupDataをセッション状態から復元（ステータスモーダル等で使用）
@@ -88,6 +90,7 @@ export async function beginSession(): Promise<void> {
         hpMax: setupData.statsMode !== 'none'   ? 20 : null,
         mp:    setupData.statsMode === 'hpmp'   ? 10 : null,
         mpMax: setupData.statsMode === 'hpmp'   ? 10 : null,
+        items: [],
       },
     });
 

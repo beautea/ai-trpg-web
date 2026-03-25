@@ -18,6 +18,8 @@ Thumbs.db
 # エディタ
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # スクリプト
 commit.sh

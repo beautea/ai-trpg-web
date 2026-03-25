@@ -34,17 +34,18 @@ server.ts（Expressアプリ）
         └── rag_system.ts      # RAG（検索拡張生成）・システムルール管理
 
 public/js/（フロントエンド TypeScript・esbuildでバンドル → public/js/dist/app.js）
-  ├── app.ts        # エントリーポイント・初期化処理
-  ├── api.ts        # fetchラッパー・SSEパーサー
-  ├── state.ts      # 共有状態（AppState・SetupData・particlesCtrl）
-  ├── screens.ts    # 画面遷移管理
-  ├── particles.ts  # パーティクルアニメーション
-  ├── reader.ts     # リーダー設定・スクロールヘルパー
-  ├── story.ts      # ストーリー表示・ストリーミング・行動選択肢
-  ├── session.ts    # セッションライフサイクル（再開・新規開始）
-  ├── setup.ts      # セットアップウィザードUIハンドラ
-  ├── game.ts       # ゲーム画面UI（入力・ダイス・ロールバック・モーダル）
-  └── utils.ts      # DOMヘルパー・Toast・確認ダイアログ
+  ├── app.ts             # エントリーポイント・初期化処理
+  ├── api.ts             # fetchラッパー・SSEパーサー・ブラウザフィンガープリント
+  ├── state.ts           # 共有状態（AppState・SetupData・particlesCtrl）
+  ├── screens.ts         # 画面遷移管理
+  ├── particles.ts       # パーティクルアニメーション
+  ├── reader.ts          # リーダー設定・スクロールヘルパー
+  ├── story.ts           # ストーリー表示・ストリーミング・行動選択肢
+  ├── session.ts         # セッションライフサイクル（再開・新規開始）
+  ├── sessions-screen.ts # 冒険の記録ダッシュボード（一覧・再開・削除）
+  ├── setup.ts           # セットアップウィザードUIハンドラ
+  ├── game.ts            # ゲーム画面UI（入力・ダイス・ロールバック・モーダル）
+  └── utils.ts           # DOMヘルパー・Toast・確認ダイアログ
 ```
 
 ### ビルド構成
@@ -69,18 +70,19 @@ public/js/（フロントエンド TypeScript・esbuildでバンドル → publi
 | `src/core/prompt_builder.ts` | システムプロンプト構築 | HTTP・LLM通信 |
 | `src/core/llm_client.ts` | LLM API通信 | ゲームロジック |
 | `src/core/session_store.ts` | セッション状態のSSoT | HTTP・LLM |
-| `src/core/save_manager.ts` | セーブ・ロード・ファイルI/O | HTTP |
+| `src/core/save_manager.ts` | セーブ・ロード・ファイルI/O・セッション一覧 | HTTP |
 | `src/core/auto_save.ts` | 自動セーブ・起動時全セッション復元 | HTTP・LLM |
 | `src/core/memory_store.ts` | ChromaDBクライアント初期化・メモリCRUD | ゲームロジック |
 | `src/core/rag_system.ts` | メモリ抽出・検索・プロンプト整形・システムルール管理 | HTTP |
 | `public/js/app.ts` | エントリーポイント・初期化処理 | サーバーロジック |
-| `public/js/api.ts` | fetchラッパー・SSEパーサー | UIロジック |
+| `public/js/api.ts` | fetchラッパー・SSEパーサー・クライアントID管理 | UIロジック |
 | `public/js/state.ts` | 共有状態（AppState・SetupData・particlesCtrl） | サーバーロジック |
 | `public/js/screens.ts` | 画面遷移管理 | サーバーロジック |
 | `public/js/particles.ts` | パーティクルアニメーション | ゲームロジック |
 | `public/js/reader.ts` | リーダー設定・スクロールヘルパー | サーバーロジック |
 | `public/js/story.ts` | ストーリー表示・ストリーミング・行動選択肢 | サーバーロジック |
 | `public/js/session.ts` | セッションライフサイクル（再開・新規開始） | サーバーロジック |
+| `public/js/sessions-screen.ts` | 冒険の記録ダッシュボード（一覧・再開・削除） | サーバーロジック |
 | `public/js/setup.ts` | セットアップウィザードUIハンドラ | サーバーロジック |
 | `public/js/game.ts` | ゲーム画面UI（入力・ダイス・ロールバック・モーダル・セーブ） | サーバーロジック |
 | `public/js/utils.ts` | DOMヘルパー・Toast・確認ダイアログ | サーバーロジック |
@@ -118,16 +120,38 @@ public/js/（フロントエンド TypeScript・esbuildでバンドル → publi
 // src/types.ts の主要インターフェース（抜粋）
 interface Session {
   id: string;              // UUID
+  clientId?: string;       // ブラウザフィンガープリントID（セッション所有者の識別）
   createdAt: number;       // Date.now()
   active: boolean;
   setupComplete: boolean;
   rules: SessionRules;
   world: SessionWorld;     // { adventureTheme, coreConceptGenerated }
-  player: PlayerStats;     // { name, characterDescription, hp, hpMax, mp, mpMax }
+  player: PlayerStats;     // { name, characterDescription, hp, hpMax, mp, mpMax, items }
   scene: string;           // 最後のGM応答
   turn: number;
   history: HistoryEntry[]; // 最大60エントリ（addHistoryで自動トリム）
 }
+
+interface PlayerStats {
+  name: string;
+  characterDescription: string;
+  hp: number | null;
+  hpMax: number | null;
+  mp: number | null;
+  mpMax: number | null;
+  items: string[];         // 所持品リスト
+}
+
+// セッション一覧ダッシュボード用サマリー型
+interface SessionSummary {
+  id: string;
+  playerName: string;
+  genre: string;
+  turn: number;
+  lastPlayedAt: string;    // ISO文字列
+  scene: string;
+}
+
 type DiceSystem = 'none' | 'd20' | 'coc' | 'dnd5e';
 type StatsMode = 'none' | 'hp' | 'hpmp';
 type NarrativeStyle = 'novel' | 'trpg' | 'balanced';
@@ -143,6 +167,8 @@ type ResponseLength = 'short' | 'standard' | 'long';
 | GET | `/login` | ログイン画面（`login.html`） |
 | POST | `/api/auth/login` | パスワード検証・`auth_token` cookie 発行 |
 | POST | `/api/auth/logout` | `auth_token` cookie 削除 |
+| GET | `/api/sessions` | セッション一覧取得（X-Client-ID で所有者フィルタ） |
+| DELETE | `/api/sessions/:id` | セッション完全削除（ファイル・メモリ・ChromaDB） |
 | POST | `/api/session/new` | セッション新規作成（UUID発行） |
 | GET | `/api/session/:id` | セッション状態取得（なければ自動セーブから復元） |
 | PATCH | `/api/session/:id` | セッション更新（セットアップ設定） |
@@ -182,6 +208,14 @@ type ResponseLength = 'short' | 'standard' | 'long';
 ### HP/MP の自動パース
 GMの応答テキストから `【HP】現在: X / 最大: Y` 形式を正規表現で抽出して `player.hp/hpMax` を更新する（`gm_system.parseAndUpdateStats()` 参照）。`statsMode === "hpmp"` の場合は `【MP】現在: X / 最大: Y` も更新。`statsMode === "none"` の場合は何もしない。
 
+### 所持品の自動パース
+GMの応答テキストから以下のマーカーを抽出し、`player.items` を自動更新する（`gm_system.parseAndUpdateStats()` 内で処理）。
+
+- `【アイテム取得】アイテム名` — `player.items` に追加（重複は無視）
+- `【アイテム消失】アイテム名` — `player.items` から削除
+
+`prompt_builder.buildSystemPrompt()` でGMに対してマーカー記法の使用を指示し、現在の所持品リストを毎ターン注入する。ゲーム画面のステータスパネルには所持品をタグ形式で表示する（`game.ts` の `renderStatus()`）。
+
 ### RAGシステム
 `processActionStream()` はプレイヤー行動をもとに `rag_system.retrieveRelevantMemories()` で関連メモリを検索し、システムプロンプトに注入する。GM応答後は `extractAndStoreMemoryAsync()` で非同期にメモリを抽出・格納する（レスポンスをブロックしない）。
 
@@ -195,6 +229,11 @@ GMの応答テキストから `【HP】現在: X / 最大: Y` 形式を正規表
 
 ### セーブ形式
 `data/saves/{sessionId}/{saveName}.json` + `{saveName}_summary.md` の2ファイル形式。JSONにはセッション全状態を保存し、MDは人間向けサマリー。`autosave.json` はユーザー向けセーブ一覧（`listSaves()`）から除外される。
+
+### セッション一覧（ダッシュボード）
+`save_manager.listAllSessions(clientId?)` が `data/saves/` 配下の全 UUID ディレクトリを走査し、`autosave.json` からサマリーを収集して `SessionSummary[]` を返す。`clientId` が指定された場合はセッションの `clientId` フィールドと照合して所有者のセッションのみ返す。`setupComplete === false` のセッションは除外する。結果は `lastPlayedAt` の降順でソートされる。
+
+`save_manager.deleteSessionDirectory(sessionId)` はセッションのセーブディレクトリをすべて削除する（ダッシュボードからの完全削除用）。`DELETE /api/sessions/:id` はメモリ上のセッション・ChromaDBメモリ・ファイルの3箇所を一括削除する。
 
 ### プロンプトの文字数制限
 GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_builder.buildSystemPrompt()` 内で注入）。
@@ -217,14 +256,23 @@ GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_b
 `src/routes/api.ts` の全エンドポイントで以下を検証する：
 - **セッションID**: UUID v4形式（`isValidSessionId()`）のみ受け付け、不正値は 400 を返す。
 - **セーブ名**: `sanitizeSaveName()` で英数字・アンダースコア・ハイフン・日本語文字のみ許可（最大40文字）。
+- **クライアントID**: `extractClientId()` で英数字・ハイフン・アンダースコアのみ許可（最大100文字）。不正値は `undefined` として扱い、フィルタリングをスキップする。
 - **PATCHの列挙値**: `diceSystem`・`statsMode`・`narrativeStyle`・`responseLength` は `ALLOWED` セットに含まれる値のみ受け付け、`id`・`active`・`setupComplete` 等のコアフィールドの上書きを防ぐ。
 - **アクション長**: 1000文字超は 400 を返す（コスト爆発・メモリ圧迫防止）。
 
 #### パストラバーサル防止（サーバー）
-`save_manager.ts` の全ファイルI/O関数で `path.basename(sessionId)` および `path.basename(saveName)` を使いディレクトリ成分を除去する（多重防御）。
+`save_manager.ts` の全ファイルI/O関数で `path.basename(sessionId)` および `path.basename(saveName)` を使いディレクトリ成分を除去する（多重防御）。`deleteSessionDirectory()` は UUID v4 形式の検証も行う。
+
+#### ブラウザフィンガープリント（フロントエンド）
+`api.ts` の `getClientId()` が `localStorage` に永続化されたクライアントIDを返す。初回訪問時はブラウザ情報（userAgent・言語・画面解像度・タイムゾーン・ハードウェア情報）を djb2 ハッシュ化したフィンガープリントとランダムUUIDを組み合わせて生成する。すべてのAPIリクエストは `withClientId()` 経由で `X-Client-ID` ヘッダーを付与する。これによりユーザー間のセッション一覧の混在を防ぐ（認証の代替ではなく利便性のための分離）。
 
 ### フロントエンドの画面遷移
-5つの画面（div）をCSSのopacityとdisplayで切り替える。`showScreen(name)` 経由で遷移し、直接CSSを操作しない。`showScreen()` はランディング画面への遷移時に `particlesCtrl?.restart()`、それ以外の画面への遷移時に `particlesCtrl?.stop()` を呼び出してパーティクルを制御する。
+6つの画面（div）をCSSのopacityとdisplayで切り替える。`showScreen(name)` 経由で遷移し、直接CSSを操作しない。`showScreen()` はランディング画面への遷移時に `particlesCtrl?.restart()`、それ以外の画面への遷移時に `particlesCtrl?.stop()` を呼び出してパーティクルを制御する。
+
+画面一覧: `landing`・`sessions`（冒険の記録ダッシュボード）・`setup`・`loading`・`game`。
+
+### 冒険の記録ダッシュボード（セッション一覧）
+`sessions-screen.ts` の `openSessionsScreen()` がランディング画面の「冒険の記録」ボタンから呼び出される。`api.listSessions()` でサーバーから `SessionSummary[]` を取得してカード形式で一覧表示する。各カードから「続きから」でセッション再開、「削除」でセッションの完全削除（確認ダイアログあり）ができる。ダッシュボードからの再開は `tryResumeSession()` を経由してゲーム画面へ遷移する。
 
 ### セットアップウィザードのステップ
 ステップ0〜4でルール・キャラクターを設定し、ステップ5でゲーム画面へ遷移する。各ステップの状態は `state.setupStep` で管理する。
@@ -232,11 +280,14 @@ GMの応答は `responseLength` 設定に応じて動的に変わる（`prompt_b
 ### 自動再開（フロントエンド）
 ページリロード時、`localStorage` の `currentSessionId` をもとに `tryResumeSession()` でセッションを復元する。セッション終了時は `localStorage.removeItem('currentSessionId')` でクリアする。
 
+### 旧データ互換
+`player.items` フィールドは後から追加されたため、`session_store.restoreSession()` と `session.ts` の `tryResumeSession()` で `items` が存在しない旧セーブデータを空配列で補完する。
+
 ### 行動選択肢
 GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoices()` で本文と選択肢を分離し、選択肢をボタンとして表示する。ストリーミング中は選択肢セクションをDOMに出力せず、生成完了後に反映する。`parseChoices()` は丸数字形式（①②③）を優先し、次点で数字形式（1. 2. 3.）に対応する。
 
 ### 確認ダイアログ（`showConfirm()`）
-ネイティブの `window.confirm()` は使用しない。代わりに `showConfirm(message, options)` を使う。`Promise<boolean>` を返すスタイル付きモーダルで、`ok`（ボタンラベル）・`cancel`（キャンセルラベル）・`danger`（`true` で赤ボタン）オプションを受け取る。ロールバック・セーブ削除・ロード・セッション終了の各操作で使用する。HTML 側の対応要素は `#modal-confirm`・`#confirm-message`・`#btn-confirm-ok`・`#btn-confirm-cancel`。
+ネイティブの `window.confirm()` は使用しない。代わりに `showConfirm(message, options)` を使う。`Promise<boolean>` を返すスタイル付きモーダルで、`ok`（ボタンラベル）・`cancel`（キャンセルラベル）・`danger`（`true` で赤ボタン）オプションを受け取る。ロールバック・セーブ削除・ロード・セッション終了・ダッシュボードからのセッション削除の各操作で使用する。HTML 側の対応要素は `#modal-confirm`・`#confirm-message`・`#btn-confirm-ok`・`#btn-confirm-cancel`。
 
 ### パスワード認証（オプション）
 `SESSION_SECRET` 環境変数が設定されている場合のみ認証を有効化（`AUTH_REQUIRED = true`）。未設定時は認証なしで全リクエストを通過させる。
@@ -286,7 +337,11 @@ GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoic
 
 ```
 ランディング画面
-    ↓ [冒険を始める]
+    ├─ [冒険の記録] → セッション一覧画面
+    │      ├─ [続きから] → ローディング画面 → ゲーム画面（セッション再開）
+    │      ├─ [削除] → セッション完全削除（確認ダイアログあり）
+    │      └─ [新しい冒険を始める] → セットアップ画面
+    └─ [冒険を始める]
 セットアップ画面（5ステップ）
     ステップ0: ジャンル選択（6種 + カスタム）
     ステップ1: 語りスタイル（novel / trpg / balanced）
@@ -295,7 +350,7 @@ GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoic
     ステップ4: 冒険テーマ（プリセット6種 + カスタム）
     ↓ [物語を始める]
 ローディング画面
-    → POST /api/session/new            → UUID発行
+    → POST /api/session/new            → UUID発行（X-Client-ID でクライアント紐付け）
     → PATCH /api/session/:id           → ルール・ワールド・プレイヤー設定
     → POST /api/game/:id/setup-complete → イントロシーン生成（SSEストリーム）
         ├─ カスタムテーマの場合: generateWorldConcept()
@@ -303,7 +358,7 @@ GM応答に `【行動の選択肢】` マーカーがある場合、`parseChoic
 ゲーム画面（ターンループ）
     プレイヤーテキスト入力
     → POST /api/game/:id/action → GM応答（SSEストリーム）
-    → HP/MPパース → RAGメモリ抽出 → 自動セーブ → セッション更新
+    → HP/MPパース → アイテム取得/消失パース → RAGメモリ抽出 → 自動セーブ → セッション更新
 
 サイドアクション:
     • ダイス: POST /api/game/:id/dice

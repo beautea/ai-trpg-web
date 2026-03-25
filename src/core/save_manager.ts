@@ -3,7 +3,10 @@ import path from 'path';
 import { config } from '../config.js';
 import { getSession, restoreSession } from './session_store.js';
 import { generateSummary } from './gm_system.js';
-import type { Session, SaveMeta } from '../types.js';
+import type { Session, SaveMeta, SessionSummary } from '../types.js';
+
+/** UUID v4 形式の検証 */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const SAVES_DIR = config.paths.saves;
 
@@ -100,6 +103,55 @@ export async function loadSave(sessionId: string, saveName: string): Promise<Ses
   const data = JSON.parse(raw) as Session;
   restoreSession(sessionId, data);
   return data;
+}
+
+/**
+ * 全セッションの一覧を取得（autosave.json から）
+ * clientId が指定された場合は一致するセッションのみ返す（ブラウザフィンガープリントによる所有者フィルタ）
+ */
+export async function listAllSessions(clientId?: string): Promise<SessionSummary[]> {
+  try {
+    await fs.mkdir(config.paths.saves, { recursive: true });
+    const entries = await fs.readdir(config.paths.saves, { withFileTypes: true });
+    const results = await Promise.all(
+      entries
+        .filter((e) => e.isDirectory() && UUID_REGEX.test(e.name))
+        .map(async (e): Promise<SessionSummary | null> => {
+          try {
+            const file = path.join(config.paths.saves, e.name, 'autosave.json');
+            const raw = await fs.readFile(file, 'utf8');
+            const data = JSON.parse(raw) as Session & { autoSavedAt?: string };
+            if (!data.setupComplete) return null;
+            // clientId が指定されている場合、セッションの clientId と照合する
+            if (clientId && data.clientId && data.clientId !== clientId) return null;
+            return {
+              id: e.name,
+              playerName: data.player?.name || '不明',
+              genre: data.rules?.genre || '不明',
+              turn: data.turn || 0,
+              lastPlayedAt: data.autoSavedAt || new Date(data.createdAt).toISOString(),
+              scene: data.scene || '',
+            };
+          } catch {
+            return null;
+          }
+        }),
+    );
+    const sessions = results.filter((s): s is SessionSummary => s !== null);
+    return sessions.sort((a, b) => new Date(b.lastPlayedAt).getTime() - new Date(a.lastPlayedAt).getTime());
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * セッションディレクトリをすべて削除（ダッシュボードからの完全削除用）
+ */
+export async function deleteSessionDirectory(sessionId: string): Promise<void> {
+  const safeId = path.basename(sessionId);
+  if (!UUID_REGEX.test(safeId)) throw new Error('Invalid session ID');
+  const dir = path.join(config.paths.saves, safeId);
+  await fs.rm(dir, { recursive: true, force: true });
 }
 
 /**

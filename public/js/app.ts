@@ -8,6 +8,7 @@ import { setParticlesCtrl } from './state.js';
 import { applyReaderSettings, initReaderPanel, toggleReaderPanel } from './reader.js';
 import { showScreen } from './screens.js';
 import { tryResumeSession } from './session.js';
+import { openSessionsScreen } from './sessions-screen.js';
 
 // セットアップ・ゲームモジュールはサイドエフェクト（イベントリスナー登録）のためインポートのみ
 import './setup.js';
@@ -22,6 +23,9 @@ async function init(): Promise<void> {
   initReaderPanel();
 
   $('btn-start-journey').addEventListener('click', () => showScreen('setup'));
+  $('btn-sessions').addEventListener('click', openSessionsScreen);
+  $('btn-sessions-back').addEventListener('click', () => showScreen('landing'));
+  $('btn-sessions-new').addEventListener('click', () => showScreen('setup'));
 
   // デフォルトスタイルカードを選択状態にする
   document.querySelector('.style-card[data-value="novel"]')?.classList.add('selected');
